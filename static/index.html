@@ -1082,9 +1082,11 @@
                                         statusEl.className = 'status-bar done';
                                         statusEl.innerHTML = `✅ ${data.message}`;
                                     } else if (data.step === 'llm') {
-                                        // Switch to streaming mode — hide thinking, show stream area
-                                        statusEl.style.display = 'none';
-                                        streamEl.style.display = 'block';
+                                        // Keep thinking indicator visible until first token
+                                        const mainEl2 = statusEl.querySelector('.thinking-dots + div > div:first-child');
+                                        const stageEl2 = statusEl.querySelector('.thinking-stage');
+                                        if (mainEl2) mainEl2.textContent = 'Generating response...';
+                                        if (stageEl2) stageEl2.textContent = 'Waiting for first token from LLM';
                                         // Don't reset userScrolledUp here — respect user's scroll position
                                     } else if (data.step === 'context') {
                                         const stageMap = {
@@ -1111,6 +1113,11 @@
                                     break;
 
                                 case 'token':
+                                    // On first token, switch from thinking indicator to stream area
+                                    if (!rawText) {
+                                        statusEl.style.display = 'none';
+                                        streamEl.style.display = 'block';
+                                    }
                                     rawText += data.t;
                                     if (!renderThrottle) {
                                         renderThrottle = setTimeout(() => {
