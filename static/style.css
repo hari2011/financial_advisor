@@ -1,0 +1,134 @@
+:root {
+    --primary: #1a73e8;
+    --primary-dark: #1557b0;
+    --bg-dark: #0e1117;
+    --bg-card: #1e2329;
+    --text-primary: #e6e6e6;
+    --text-secondary: #9ca3af;
+    --accent-green: #00c853;
+    --accent-red: #ff1744;
+    --border: #2d3748;
+}
+
+/* Main container */
+.stApp {
+    background-color: var(--bg-dark);
+}
+
+/* Chat message styling */
+.stChatMessage {
+    background-color: var(--bg-card) !important;
+    border-radius: 12px !important;
+    border: 1px solid var(--border) !important;
+    margin-bottom: 8px !important;
+}
+
+/* Agent badge */
+.agent-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8em;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.agent-badge.stock { background: rgba(26, 115, 232, 0.2); color: #64b5f6; }
+.agent-badge.portfolio { background: rgba(156, 39, 176, 0.2); color: #ce93d8; }
+.agent-badge.tax { background: rgba(255, 152, 0, 0.2); color: #ffb74d; }
+.agent-badge.retirement { background: rgba(76, 175, 80, 0.2); color: #81c784; }
+.agent-badge.loan { background: rgba(244, 67, 54, 0.2); color: #ef9a9a; }
+.agent-badge.budget { background: rgba(0, 200, 83, 0.2); color: #69f0ae; }
+.agent-badge.crypto { background: rgba(255, 193, 7, 0.2); color: #ffd54f; }
+.agent-badge.insurance { background: rgba(0, 188, 212, 0.2); color: #4dd0e1; }
+.agent-badge.general { background: rgba(158, 158, 158, 0.2); color: #bdbdbd; }
+
+/* Sidebar styling */
+section[data-testid="stSidebar"] {
+    background-color: #131722 !important;
+    border-right: 1px solid var(--border);
+}
+
+/* Agent selector cards */
+.agent-card {
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.agent-card:hover {
+    border-color: var(--primary);
+    background: rgba(26, 115, 232, 0.1);
+}
+.agent-card.active {
+    border-color: var(--primary);
+    background: rgba(26, 115, 232, 0.15);
+}
+
+/* Welcome section */
+.welcome-container {
+    text-align: center;
+    padding: 40px 20px;
+    max-width: 700px;
+    margin: 0 auto;
+}
+.welcome-container h1 {
+    font-size: 2.2em;
+    margin-bottom: 10px;
+}
+.welcome-container p {
+    color: var(--text-secondary);
+    font-size: 1.1em;
+}
+
+/* Quick action buttons */
+.quick-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+/* Status indicator */
+.status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+.status-dot.online { background: var(--accent-green); }
+.status-dot.loading { background: #ffd54f; }
+
+/* Thinking animation */
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+.thinking {
+    animation: pulse 1.5s infinite;
+    color: var(--text-secondary);
+}
+
+/* Metric cards */
+.metric-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+}
+.metric-value {
+    font-size: 1.8em;
+    font-weight: 700;
+    color: var(--primary);
+}
+.metric-label {
+    color: var(--text-secondary);
+    font-size: 0.85em;
+    margin-top: 4px;
+}
