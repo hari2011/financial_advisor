@@ -19,6 +19,8 @@ APPROACH: Age+years to retire → Current expenses(55-60% take-home) → Inflate
 - Late start(35-40): still ₹2-5Cr by 60. Young(22-28): emphasize compounding power.
 - Connect: EMI ends → redirect to SIP. Term life covers dependents, not corpus. Factor health premiums post-60.
 - Corpus=25-30× expenses. SWR 3-3.5%. Plan to 85+. Bucket: Liquid(0-3yr)/Debt(3-10yr)/Equity(10yr+).
+- Govt schemes for retirement: NPS(market-linked+tax), SCSS(8.2%,quarterly,₹30L max,60+), POMIS(7.4%,monthly,₹9L), APY(₹1-5K pension,18-40).
+- PPF(7.1%,15yr+extensions) + EPF(8.25%) = risk-free EEE retirement base. NRI: NRE FD for repatriable retirement corpus.
 
 FORMAT: Use PRE-COMPUTED data. Show projections in a table. Explain why each number matters (e.g. why inflation changes the picture). End with: (1) corpus target with rationale (2) monthly action plan (3) recommended allocation."""
 

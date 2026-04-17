@@ -561,6 +561,266 @@ RENT vs BUY FRAMEWORK:
 """
 
 
+# ──────── GOVERNMENT SAVINGS SCHEMES ────────
+SECTIONS["govt_schemes"] = """
+INDIAN GOVERNMENT SAVINGS & PENSION SCHEMES (FY 2025-26):
+
+═══ SMALL SAVINGS SCHEMES (Rates revised quarterly by MoF) ═══
+
+PPF (Public Provident Fund):
+  Rate: 7.1% (compounded annually) | Lock-in: 15 years (extendable in 5yr blocks)
+  Limit: ₹500/yr min, ₹1,50,000/yr max | Tax: EEE (deposit+interest+maturity all exempt)
+  Partial withdrawal: From 7th year (50% of 5th year balance) | Loan: Yr 3-6 against balance
+  80C: Full ₹1.5L eligible | Best for: Conservative investors, retirement corpus, children
+
+SSY (Sukanya Samriddhi Yojana):
+  Rate: 8.2% (highest among small savings) | Lock-in: 21 years from opening
+  Eligibility: Girl child aged 0-10 | Max 2 accounts (one per girl child)
+  Deposit: ₹250/yr min, ₹1,50,000/yr max, deposit mandatory for 14 years
+  Partial withdrawal: 50% after girl turns 18 (for education only)
+  Premature closure: Marriage after 18, or account holder death
+  Tax: EEE (Section 80C + interest exempt + maturity exempt)
+  Best for: Parents of girl children — highest guaranteed return + full tax exemption
+
+NPS (National Pension System):
+  Returns: 9-12% (market-linked, based on asset allocation)
+  Eligibility: 18-70 years | Retirement: Payout at 60
+  Tier-I (pension): ₹500/yr min, no max. Lock till 60 (partial withdrawal after 3yr for specific needs)
+  Tier-II (investment): ₹250 min, fully liquid (no tax benefit except govt employees)
+  At 60: Minimum 40% must buy annuity, up to 60% lump sum tax-free (if ≤60% of corpus)
+  Tax benefits: 80CCD(1) within 80C ₹1.5L + 80CCD(1B) additional ₹50K
+  Employer NPS: 80CCD(2) up to 14% of basic (no cap!) — huge benefit for corporate NPS
+  Asset allocation: E (equity max 75%), C (corporate bonds), G (govt bonds), A (alternatives)
+  Auto choice: Life Cycle Fund — equity reduces as age increases
+  Best for: Additional tax saving beyond 80C, long-term retirement corpus
+
+NSC (National Savings Certificate):
+  Rate: 7.7% (compounded annually, paid at maturity) | Tenure: 5 years fixed
+  Investment: ₹1,000 min, no max | Available at: Post office
+  Tax: 80C eligible (up to ₹1.5L). Interest taxable but reinvested interest qualifies for 80C
+  No premature withdrawal (except death/court order)
+  Best for: Risk-averse tax savers, guaranteed returns, 80C filling
+
+KVP (Kisan Vikas Patra):
+  Rate: 7.5% (compounded annually) | Doubles in: ~115 months (~9.6 years)
+  Investment: ₹1,000 min, no max | Available at: Post office, selected banks
+  Lock-in: 2.5 years (premature encashment after) | No 80C benefit
+  Best for: Conservative investors wanting guaranteed doubling, no tax benefit
+
+SCSS (Senior Citizens Savings Scheme):
+  Rate: 8.2% (simple interest, paid quarterly) | Tenure: 5 years (extendable by 3)
+  Investment: ₹1,000 min, ₹30,00,000 max | Eligibility: 60+ (or 55+ for VRS/superannuation)
+  Tax: 80C eligible. Quarterly interest is taxable (TDS if interest > ₹50K/yr)
+  Premature closure: 1% penalty (1-2yr), 0.5% (2-5yr)
+  Best for: Retirees seeking regular income — highest rate among senior schemes
+
+POMIS (Post Office Monthly Income Scheme):
+  Rate: 7.4% (simple interest, paid monthly) | Tenure: 5 years
+  Investment: ₹1,000 min, ₹9,00,000 max (single), ₹15,00,000 (joint)
+  Tax: No 80C. Interest fully taxable at slab rate
+  Premature: After 1yr (1-3yr: 2% penalty, 3-5yr: 1%)
+  Best for: Monthly income for retirees/homemakers — predictable cash flow
+
+APY (Atal Pension Yojana):
+  Pension: ₹1,000 to ₹5,000/month (fixed) | Starts at: Age 60
+  Eligibility: 18-40 years, must have bank account + Aadhaar
+  Contribution: ₹42-1,454/month depending on entry age and pension chosen
+  Tax: 80CCD(1) within 80C ₹1.5L | Govt co-contribution discontinued (was till 2020)
+  After death: Spouse gets same pension → after spouse, nominee gets corpus
+  Best for: Unorganised sector workers, guaranteed minimum pension
+
+EPF (Employee Provident Fund):
+  Rate: 8.25% (FY 2024-25) | Employee: 12% of Basic+DA | Employer: 12% (3.67% EPF + 8.33% EPS)
+  EPS cap: ₹15,000/month basic | Voluntary PF: Employee can contribute more via VPF (same rate)
+  Withdrawal: Full after 2 months unemployment, or retirement at 58
+  Partial: Housing (7yr), Medical, Education, Marriage (specific conditions)
+  Tax: EEE up to ₹2.5L/yr contribution. Above ₹2.5L: interest taxable
+
+═══ COMPARISON TABLE ═══
+  Highest rate: SSY 8.2%, EPF 8.25%, SCSS 8.2%
+  Full tax-free (EEE): PPF, SSY, EPF (up to ₹2.5L)
+  Monthly income: POMIS, SCSS (quarterly)
+  Extra 80C benefit: PPF, SSY, NSC, ELSS, NPS (+ extra ₹50K 80CCD1B)
+  No lock-in: NPS Tier-II, POMIS (after 1yr)
+  Best for girl child: SSY (8.2%, 21yr)
+  Best for pension: NPS (market-linked) + APY (guaranteed)
+"""
+
+
+# ──────── BANKING ACCOUNT TYPES ────────
+SECTIONS["banking_accounts"] = """
+INDIAN BANKING ACCOUNT TYPES — COMPLETE GUIDE:
+
+═══ RESIDENT ACCOUNTS ═══
+
+SAVINGS ACCOUNT:
+  Purpose: Daily banking, salary credit, UPI/NEFT/RTGS
+  Interest: 2.5-7% (small finance banks offer higher: AU, Equitas)
+  Min balance: ₹0 (Jan Dhan, basic) to ₹10,000 (premium)
+  Tax: Interest exempt up to ₹10,000/yr (Section 80TTA), ₹50,000 for seniors (80TTB)
+  DICGC insurance: ₹5,00,000 per depositor per bank (covers savings + FD combined)
+
+CURRENT ACCOUNT:
+  Purpose: Business transactions, no transaction limits
+  Interest: NIL | Min balance: ₹10,000-₹1,00,000 (varies by bank)
+  Features: Cheque book, overdraft facility, high transaction limits
+  Tax: No interest, no TDS
+  Best for: Businesses, traders, professionals with high transaction volume
+
+SALARY ACCOUNT:
+  Purpose: Employer-linked, zero balance | Converts to savings if no salary credit for 3 months
+  Benefits: Zero balance, free debit card, higher ATM limits, pre-approved loans
+  Best for: Salaried employees (auto-opened by employer)
+
+FIXED DEPOSIT (FD):
+  Rate: 6.5-7.5% (regular), +0.25-0.5% for seniors | Tenure: 7 days to 10 years
+  Tax: TDS 10% if interest > ₹40K/yr (₹50K for seniors). Submit Form 15G/15H to avoid TDS if total income < taxable limit
+  Tax-saver FD: 5yr lock-in, 80C eligible up to ₹1.5L (only at selected banks)
+  Premature withdrawal: 0.5-1% penalty on applicable rate
+  Sweep-in FD: Auto-breaks FD if savings balance insufficient — best of both worlds
+
+RECURRING DEPOSIT (RD):
+  Rate: Similar to FD rates | Monthly deposit: ₹100 onwards
+  Compounding: Quarterly (per RBI norms)
+  Tax: Interest taxable at slab rate. TDS applicable per RBI norms
+  Best for: Building discipline for regular savings, fixed monthly investment
+
+═══ NRI ACCOUNTS (Non-Resident Indians) ═══
+
+NRE ACCOUNT (Non-Resident External):
+  Purpose: Park foreign earnings in India (in INR)
+  Deposits: Only foreign remittances (salary/income earned abroad)
+  Withdrawal: Freely repatriable (can send money back abroad anytime)
+  Interest: Tax-FREE in India (both savings and FD) — biggest advantage
+  Types: NRE Savings, NRE FD (rates similar to regular FD, sometimes slightly lower)
+  Joint: Only with another NRI/PIO (not with resident Indian)
+  On return to India: Must convert to regular savings account within reasonable time
+  Best for: NRIs who want to send money home, earn tax-free interest, and maintain full repatriability
+
+NRO ACCOUNT (Non-Resident Ordinary):
+  Purpose: Manage income earned IN India (rent, pension, dividends, interest)
+  Deposits: Both Indian and foreign income allowed
+  Withdrawal: Repatriable up to $1 million/year (after tax clearance and CA certificate)
+  Interest: TAXABLE in India at 30% + cess (TDS deducted by bank)
+  Tax treaty: Can claim DTAA benefit to reduce TDS (submit Form 10F + TRC)
+  Joint: Can hold with resident Indian
+  On return: Becomes regular savings account
+  Best for: NRIs with Indian rental income, pension, or Indian investments
+
+FCNR ACCOUNT (Foreign Currency Non-Resident):
+  Purpose: Keep money in foreign currency (USD/GBP/EUR/JPY/CAD/AUD)
+  Type: Only term deposits (no savings — minimum 1yr, max 5yr)
+  Key advantage: NO currency conversion risk — deposit and maturity in foreign currency
+  Interest: Tax-FREE in India | Rates: Based on LIBOR/SOFR (typically 3-5%)
+  Repatriation: Fully repatriable (principal + interest)
+  Best for: NRIs who plan to return and don't want INR risk, or parking surplus foreign currency
+
+NRE vs NRO vs FCNR — WHEN TO USE:
+  Foreign salary → India: NRE (tax-free, fully repatriable)
+  Indian rental/dividend income: NRO (mandatory — Indian income must go here)
+  Parking USD/GBP without INR risk: FCNR (term deposit in foreign currency)
+  Planning to return soon: NRE (convert to savings) + FCNR (avoid forex loss)
+  Want joint account with resident: Only NRO allows this
+
+IMPORTANT NRI RULES:
+  • NRIs CANNOT hold regular savings/current accounts — must convert on leaving India
+  • NRIs can invest in MF, stocks (through PIS route), real estate (except agricultural land)
+  • NRI FD rates may differ from resident rates
+  • TDS on NRO: 30% on interest + surcharge + cess (effective ~31.2%)
+  • DTAA: Double Tax Avoidance Agreement — claim credit in country of residence
+  • FEMA rules: All NRI accounts governed by RBI/FEMA — non-compliance is serious
+
+═══ OTHER SPECIAL ACCOUNTS ═══
+
+JAN DHAN ACCOUNT (PMJDY):
+  Purpose: Financial inclusion — zero balance basic savings
+  Benefits: Free accident insurance ₹2L, life cover ₹30K, overdraft ₹10K, RuPay card
+  Eligibility: Any Indian resident without bank account
+  Best for: Low-income individuals, rural population, govt benefit (DBT) recipients
+
+DEMAT ACCOUNT:
+  Purpose: Hold shares, bonds, ETFs, govt securities in electronic form
+  Providers: NSDL/CDSL through DPs (brokers like Zerodha, Groww, Angel One)
+  Charges: AMC ₹0-300/yr + transaction charges
+  Required for: Stock trading, IPO application, corporate bond investment
+
+TRADING ACCOUNT:
+  Purpose: Buy/sell securities on stock exchanges (NSE/BSE)
+  Linked to: Bank account (funds) + Demat account (holdings)
+  Providers: Zerodha, Groww, Angel One, Upstox (discount), ICICI Direct, HDFC Sec (full-service)
+  Charges: ₹0-20 per trade (discount brokers), 0.3-0.5% (full-service)
+
+PPF ACCOUNT (Public Provident Fund):
+  Held at: Banks (SBI, ICICI, etc.) or post office
+  One account per person (no joint PPF)
+  Minor child: Parent can open PPF, combined limit ₹1.5L
+  NRI: Cannot open new PPF. Existing PPF at time of becoming NRI continues till maturity (at 7.1%)
+
+SUKANYA SAMRIDDHI ACCOUNT:
+  Held at: Banks or post office | One per girl child, max 2 per family
+  NRI: Girl child must be resident Indian
+  Transfer: Can transfer between banks/post offices
+"""
+
+
+# ──────── GOVERNMENT WELFARE & FINANCIAL POLICIES ────────
+SECTIONS["govt_policies"] = """
+KEY INDIAN GOVERNMENT FINANCIAL POLICIES & PROGRAMS:
+
+═══ DIRECT BENEFIT TRANSFER (DBT) ═══
+  All subsidies (LPG, fertilizer, food, MGNREGA wages) credited directly to Jan Dhan/bank account
+  Eliminates middlemen. Linked to Aadhaar + bank account
+
+═══ TAX POLICIES (FY 2025-26) ═══
+  New regime is DEFAULT (no opt-in needed). Old regime requires Form 10-IE
+  Standard deduction: ₹75,000 (new), ₹50,000 (old)
+  87A rebate: Income ≤ ₹12,00,000 → ZERO tax under new regime (effective ₹12,75,000 with std deduction)
+  No LTCG tax up to ₹1,25,000/yr on equity (new limit from Budget 2024)
+  NPS employer: 14% of basic — no cap on deduction under 80CCD(2)
+
+═══ DIGITAL INDIA FINANCIAL INFRA ═══
+  UPI: Zero MDR on transactions < ₹2,000. UPI Lite for offline payments up to ₹500
+  Aadhaar-linked: Bank account, PAN, MF KYC, insurance — all linked
+  DigiLocker: Store financial documents (PAN, Aadhaar, insurance policies)
+  Account Aggregator: Consent-based financial data sharing between banks/NBFCs/MFs
+  ONDC: Open Network for Digital Commerce — decentralized e-commerce
+
+═══ MUDRA LOAN (PMMY) ═══
+  For: Micro/small business loans without collateral
+  Shishu: Up to ₹50,000 | Kishore: ₹50K-₹5L | Tarun: ₹5L-₹10L
+  Interest: 7-12% depending on bank | No processing fee
+  Available at: All banks, NBFCs, MFIs
+
+═══ PM AWAS YOJANA (Housing) ═══
+  CLSS: Credit Linked Subsidy of 3-6.5% on home loan interest
+  EWS/LIG: Up to ₹6.5L subsidy on ₹6L loan | MIG-I: ₹4L on ₹9L | MIG-II: ₹2.35L on ₹12L
+  Eligibility: No pucca house in family, income-based category
+
+═══ STAND-UP INDIA ═══
+  Loans ₹10L-₹1Cr for SC/ST/Women entrepreneurs for greenfield enterprise
+  At least 1 SC/ST and 1 woman borrower per bank branch
+
+═══ SOVEREIGN GOLD BOND (SGB) ═══
+  Issued by RBI, 8yr tenure | 2.5% annual interest (semi-annual) tax-free at maturity
+  LTCG: Tax-free if held till maturity | Listing: Trade on exchanges
+  1 gram denomination | Max: 4kg individual, 20kg trust per fiscal year
+  Best for: Long-term gold exposure with guaranteed interest
+
+═══ PRODUCTION-LINKED INCENTIVE (PLI) ═══
+  Sectors: Electronics, pharma, auto, textiles, food processing, solar, drones, etc.
+  Incentive: 4-6% of incremental sales for 5 years
+  Impact: Encourages domestic manufacturing, Make in India
+
+═══ KEY REGULATORS ═══
+  RBI: Banks, NBFCs, monetary policy, forex, payment systems
+  SEBI: Stock exchanges, mutual funds, portfolio managers, debentures
+  IRDAI: Insurance companies, health/life/general insurance
+  PFRDA: NPS, APY, pension funds
+  DICGC: Deposit insurance ₹5L per depositor per bank
+  AMFI: Mutual fund industry body (not regulator)
+"""
+
+
 # ─────────────────────── Knowledge Selector ───────────────────────
 
 # Map query keywords → relevant knowledge sections
@@ -639,29 +899,57 @@ TOPIC_KEYWORDS = {
         "loan strategy", "should i prepay", "invest or prepay",
         "loan vs invest",
     ],
+    "govt_schemes": [
+        "ssy", "sukanya", "girl child", "nps", "national pension",
+        "nsc", "national savings", "kvp", "kisan vikas",
+        "scss", "senior citizen", "pomis", "post office",
+        "apy", "atal pension", "small savings", "government scheme",
+        "govt scheme", "ppf", "epf", "provident fund",
+        "savings scheme", "yojana", "pension scheme",
+    ],
+    "banking_accounts": [
+        "nri", "nre", "nro", "fcnr", "bank account", "savings account",
+        "current account", "salary account", "demat", "trading account",
+        "jan dhan", "zero balance", "non-resident", "foreign currency",
+        "repatriable", "repatriation", "dtaa", "fema",
+        "sweep", "fd account", "fixed deposit account",
+        "account type", "which account", "open account",
+    ],
+    "govt_policies": [
+        "mudra", "awas yojana", "stand up india", "sgb", "sovereign gold",
+        "dbt", "direct benefit", "pli", "make in india",
+        "rbi", "sebi", "irdai", "pfrda", "dicgc",
+        "regulator", "scheme", "government policy", "govt policy",
+        "subsidy", "pmjdy", "upi", "digital india",
+    ],
 }
 
 # Some queries always benefit from certain sections
 ALWAYS_RELEVANT = {
     "salary_structure": ["budget", "take home", "ctc", "salary", "lpa", "package"],
     "financial_formulas": ["how much", "calculate", "plan", "need", "corpus", "sip"],
+    "govt_schemes": ["which scheme", "where to invest safe", "government", "tax free"],
 }
 
 # Related topics: when a topic is selected, also consider pulling these
 RELATED_TOPICS = {
     "ctc_to_takehome": ["epf_rules", "gratuity", "tax_new_regime"],
     "salary_structure": ["ctc_to_takehome", "epf_rules", "gratuity"],
-    "epf_rules": ["ctc_to_takehome", "gratuity"],
+    "epf_rules": ["ctc_to_takehome", "gratuity", "govt_schemes"],
     "gratuity": ["ctc_to_takehome", "epf_rules"],
     "tax_new_regime": ["tax_old_regime", "tax_deductions_detail"],
     "tax_old_regime": ["tax_deductions_detail", "tax_new_regime"],
-    "retirement_planning": ["financial_formulas", "epf_rules"],
+    "retirement_planning": ["financial_formulas", "epf_rules", "govt_schemes"],
     "loan_rules": ["financial_formulas", "loan_strategies"],
     "insurance_guidelines": ["budget_planning"],
     "stock_market_india": ["capital_gains_tax"],
     "capital_gains_tax": ["stock_market_india", "tax_new_regime"],
     "loan_strategies": ["loan_rules", "financial_formulas"],
     "budget_planning": ["worked_examples"],
+    "govt_schemes": ["investment_vehicles", "tax_deductions_detail"],
+    "banking_accounts": ["govt_policies"],
+    "govt_policies": ["govt_schemes", "banking_accounts"],
+    "investment_vehicles": ["govt_schemes"],
 }
 
 

@@ -22,6 +22,8 @@ APPROACH: Understand situation → Core question → Consider interdependencies 
 - Real return = Nominal − Inflation − Tax. 7% FD @30% = 4.9% post-tax − 6% inflation = -1.1% real.
 - ₹10K/mo × 30yr @12% = ₹3.53Cr. 5yr late = ₹1.76Cr (50% less). EPF+PPF = best risk-free EEE.
 - Overwhelmed → simplify to 3 actions. A vs B → pros/cons table + recommendation.
+- Govt schemes: PPF(7.1%,EEE), SSY(8.2%,girl child), NPS(80CCD(1B)₹50K), SCSS(8.2%,60+), NSC(7.7%), KVP, POMIS(7.4%), APY.
+- NRI banking: NRE(tax-free, repatriable), NRO(Indian income, 30%TDS), FCNR(forex-safe). FEMA rules for NRI investments.
 
 FORMAT: Use PRE-COMPUTED data. ₹ Lakhs/Crores. Bullets and tables for data points. Explain reasoning. End with: (1) direct answer to the question (2) 2-3 specific next steps (3) one insight they shouldn’t miss."""
 

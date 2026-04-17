@@ -24,8 +24,10 @@ def compound_interest(principal: float, rate: float, years: int,
 
 def sip_calculator(monthly_investment: float, annual_rate: float,
                    years: int) -> dict:
-    """Calculate SIP (Systematic Investment Plan) returns."""
-    r = annual_rate / 100 / 12  # Monthly rate
+    """Enhanced SIP calculator with delay cost, milestones, and CAGR.
+    Uses geometric monthly rate: (1+r)^(1/12)-1 — matches Groww.
+    Features: year-wise milestones, delay penalty, wealth ratio."""
+    r = (1 + annual_rate / 100) ** (1/12) - 1  # Geometric monthly rate
     n = years * 12  # Total months
     if r == 0:
         future_value = monthly_investment * n
@@ -33,6 +35,27 @@ def sip_calculator(monthly_investment: float, annual_rate: float,
         future_value = monthly_investment * (((1 + r) ** n - 1) / r) * (1 + r)
     total_invested = monthly_investment * n
     wealth_gained = future_value - total_invested
+
+    # Delay cost: what you lose by waiting 1, 3, 5 years
+    delay_costs = {}
+    for delay in [1, 3, 5]:
+        if years - delay > 0:
+            nd = (years - delay) * 12
+            fv_d = monthly_investment * (((1 + r) ** nd - 1) / r) * (1 + r) if r > 0 else monthly_investment * nd
+            delay_costs[f"delay_{delay}yr_loss"] = round(future_value - fv_d)
+
+    # Year-wise milestones
+    milestones = []
+    for yr in [1, 3, 5, 10, 15, 20, 25, 30]:
+        if yr <= years:
+            nm = yr * 12
+            fv_m = monthly_investment * (((1 + r) ** nm - 1) / r) * (1 + r) if r > 0 else monthly_investment * nm
+            inv_m = monthly_investment * nm
+            milestones.append({"year": yr, "invested": round(inv_m), "value": round(fv_m), "gain": round(fv_m - inv_m)})
+
+    # Wealth multiplier
+    wealth_multiplier = round(future_value / total_invested, 2) if total_invested > 0 else 0
+
     return {
         "monthly_investment": round(monthly_investment, 2),
         "annual_rate": annual_rate,
@@ -41,12 +64,15 @@ def sip_calculator(monthly_investment: float, annual_rate: float,
         "future_value": round(future_value, 2),
         "wealth_gained": round(wealth_gained, 2),
         "absolute_return_pct": round((wealth_gained / total_invested) * 100, 2),
+        "wealth_multiplier": wealth_multiplier,
+        **delay_costs,
+        "milestones": milestones,
     }
 
 
 def emi_calculator(principal: float, annual_rate: float,
                    tenure_months: int) -> dict:
-    """Calculate EMI for a loan."""
+    """Enhanced EMI calculator with amortization summary, processing fee impact, and total cost breakdown."""
     r = annual_rate / 100 / 12
     if r == 0:
         emi = principal / tenure_months
@@ -54,14 +80,46 @@ def emi_calculator(principal: float, annual_rate: float,
         emi = principal * r * (1 + r) ** tenure_months / ((1 + r) ** tenure_months - 1)
     total_payment = emi * tenure_months
     total_interest = total_payment - principal
+
+    # Year-wise principal vs interest breakdown (first few years)
+    balance = principal
+    yearly_breakup = []
+    for yr in range(1, min(int(tenure_months / 12) + 2, 31)):
+        yr_principal = 0
+        yr_interest = 0
+        for _ in range(12):
+            if balance <= 0:
+                break
+            interest_part = balance * r
+            principal_part = min(emi - interest_part, balance)
+            yr_principal += principal_part
+            yr_interest += interest_part
+            balance -= principal_part
+        if yr_principal > 0:
+            yearly_breakup.append({"year": yr, "principal_paid": round(yr_principal), "interest_paid": round(yr_interest), "balance": round(max(0, balance))})
+
+    # Processing fee impact (typical 1-2%)
+    processing_fee_est = round(principal * 0.01)
+    effective_cost = total_interest + processing_fee_est
+
+    # Affordability check (EMI should be <40% of income)
+    min_income_needed = round(emi / 0.40)
+
     return {
         "principal": round(principal, 2),
         "annual_rate": annual_rate,
         "tenure_months": tenure_months,
+        "tenure_years": round(tenure_months / 12, 1),
         "emi": round(emi, 2),
         "total_payment": round(total_payment, 2),
         "total_interest": round(total_interest, 2),
         "interest_to_principal_ratio": round(total_interest / principal * 100, 2),
+        "processing_fee_est": processing_fee_est,
+        "effective_cost_with_fees": round(effective_cost),
+        "min_monthly_income_needed": min_income_needed,
+        "first_month_interest": round(principal * r) if r > 0 else 0,
+        "first_month_principal": round(emi - principal * r) if r > 0 else round(emi),
+        "yearly_breakup": yearly_breakup[:5],
     }
 
 
@@ -227,13 +285,53 @@ def retirement_corpus(monthly_expense: float, inflation_rate: float,
     else:
         monthly_sip = corpus * monthly_rate / ((1 + monthly_rate) ** n - 1)
 
+    # Emergency buffer: 6–12 months of future expenses
+    emergency_6mo = future_expense * 6
+    emergency_12mo = future_expense * 12
+    total_corpus_with_emergency = corpus + emergency_6mo
+
+    # Step-up SIP: if you increase SIP by 10% annually, how much less you need to start with
+    stepup_pct = 10
+    stepup_corpus = 0
+    stepup_sip_start = monthly_sip  # start from flat SIP and reduce
+    # Binary search for starting SIP with 10% annual stepup
+    lo, hi = 0, monthly_sip
+    for _ in range(50):
+        mid = (lo + hi) / 2
+        val = 0
+        for yr in range(int(years_to_retire)):
+            current = mid * (1 + stepup_pct / 100) ** yr
+            for _ in range(12):
+                val = (val + current) * (1 + monthly_rate)
+        if val >= corpus:
+            hi = mid
+        else:
+            lo = mid
+    stepup_sip_start = round(hi)
+    stepup_saving = round(monthly_sip - hi)
+
+    # Wealth multiplier
+    total_sip_invested = monthly_sip * n
+    wealth_multiplier = round(corpus / total_sip_invested, 2) if total_sip_invested > 0 else 0
+
     return {
         "current_monthly_expense": round(monthly_expense, 2),
         "future_monthly_expense": round(future_expense, 2),
+        "future_annual_expense": round(annual_expense, 2),
         "corpus_needed": round(corpus, 2),
         "monthly_sip_needed": round(monthly_sip, 2),
+        "lumpsum_needed_today": round(corpus / (1 + expected_return / 100) ** years_to_retire),
         "years_to_retire": years_to_retire,
         "years_in_retirement": years_in_retirement,
+        "total_sip_invested": round(total_sip_invested),
+        "wealth_from_compounding": round(corpus - total_sip_invested),
+        "wealth_multiplier": wealth_multiplier,
+        "expense_inflation_multiplier": round(future_expense / monthly_expense, 2),
+        "emergency_fund_6mo": round(emergency_6mo),
+        "emergency_fund_12mo": round(emergency_12mo),
+        "total_corpus_with_emergency": round(total_corpus_with_emergency),
+        "stepup_sip_start_10pct": stepup_sip_start,
+        "stepup_sip_saving": stepup_saving,
     }
 
 
@@ -670,7 +768,10 @@ def hra_exemption(basic_annual: float, hra_received: float,
         "option3_50_or_40_pct_basic": round(option3),
         "hra_exemption": round(exemption),
         "taxable_hra": round(taxable_hra),
-        "annual_tax_saving_approx": round(taxable_hra * 0.30 * 1.04) if taxable_hra > 0 else 0,
+        "annual_tax_saving_approx": round(exemption * 0.312),
+        "monthly_tax_saving": round(exemption * 0.312 / 12),
+        "optimal_rent": round(basic_annual * 0.10 + basic_annual * pct),
+        "exemption_rule": "Actual HRA" if exemption == option1 else ("Rent - 10% Basic" if exemption == option2 else f"{int(pct*100)}% of Basic"),
     }
 
 
@@ -790,6 +891,8 @@ def loan_prepayment(principal: float, annual_rate: float,
         months_saved = 0
 
     interest_saved = total_original - total_new
+    new_total_interest = total_new - principal
+    new_total_tenure = prepay_after_months + (new_tenure if reduce == "tenure" else (tenure_months - prepay_after_months))
 
     return {
         "original_emi": round(emi),
@@ -803,10 +906,13 @@ def loan_prepayment(principal: float, annual_rate: float,
         "strategy": reduce,
         "new_emi": round(new_emi) if reduce == "emi" else round(emi),
         "new_remaining_months": new_tenure if reduce == "tenure" else (tenure_months - prepay_after_months),
+        "new_total_tenure": new_total_tenure,
+        "new_total_interest": round(max(0, new_total_interest)),
         "months_saved": months_saved if reduce == "tenure" else 0,
         "years_saved": round(months_saved / 12, 1) if reduce == "tenure" else 0,
         "total_new_cost": round(total_new),
         "interest_saved": round(max(0, interest_saved)),
+        "interest_saved_pct": round(interest_saved / (total_original - principal) * 100, 1) if (total_original - principal) > 0 else 0,
         "emi_reduction": round(emi - new_emi) if reduce == "emi" else 0,
     }
 
@@ -892,6 +998,18 @@ def capital_gains_tax(purchase_price: float, sale_price: float,
     cess = tax * 0.04
     total_tax = tax + cess
 
+    # Holding period optimization
+    if at in ("equity", "equity_mf") and holding_period_months < 12:
+        ltcg_tax_if_held = max(0, gain - 125000) * 0.125 * 1.04
+        potential_saving = total_tax - ltcg_tax_if_held
+        hold_suggestion = f"Hold {12 - holding_period_months} more months to save ₹{potential_saving:,.0f}" if potential_saving > 0 else "Already LTCG eligible"
+    elif at in ("gold", "property") and holding_period_months < 24:
+        ltcg_tax_if_held = gain * 0.125 * 1.04
+        potential_saving = total_tax - ltcg_tax_if_held
+        hold_suggestion = f"Hold {24 - holding_period_months} more months to save ₹{potential_saving:,.0f}" if potential_saving > 0 else "Already LTCG eligible"
+    else:
+        hold_suggestion = "Optimal holding period reached"
+
     return {
         "purchase_price": round(purchase_price),
         "sale_price": round(sale_price),
@@ -902,8 +1020,10 @@ def capital_gains_tax(purchase_price: float, sale_price: float,
         "total_tax": round(total_tax),
         "net_gain": round(gain - total_tax),
         "effective_tax_rate": round(total_tax / gain * 100, 1) if gain > 0 else 0,
+        "in_hand_pct": round((gain - total_tax) / gain * 100, 1) if gain > 0 else 0,
         "asset_type": asset_type,
         "type": tax_type,
+        "holding_tip": hold_suggestion,
     }
 
 
@@ -1073,6 +1193,19 @@ def ppf_calculator(annual_deposit: float, years: int = 15,
         if yr in (1, 5, 7, 10, 15, 20, 25):
             yearly.append({"year": yr, "balance": round(balance), "interest": round(yr_interest)})
 
+    wealth_multiplier = round(balance / total_invested, 2) if total_invested > 0 else 0
+
+    # Compare with taxable FD at same rate
+    fd_gross = total_invested * (1 + current_rate / 100) ** years  # simplified
+    fd_post_tax = total_invested + (fd_gross - total_invested) * 0.7  # 30% tax
+    ppf_advantage = round(balance - fd_post_tax)
+
+    # Partial withdrawal: from 7th year, max 50% of balance at end of 4th preceding year
+    partial_withdrawal_year = 7
+
+    # Loan facility: 3rd to 6th year, max 25% of balance
+    loan_available_year = 3
+
     return {
         "annual_deposit": round(annual_deposit),
         "rate": current_rate,
@@ -1080,19 +1213,26 @@ def ppf_calculator(annual_deposit: float, years: int = 15,
         "total_invested": round(total_invested),
         "total_interest": round(interest_earned),
         "maturity_value": round(balance),
-        "tax_benefit_80c": f"₹{min(annual_deposit, 150000):,.0f}/yr",
+        "wealth_multiplier": wealth_multiplier,
+        "tax_benefit_80c": min(round(annual_deposit), 150000),
         "tax_status": "EEE (exempt at investment, growth, and withdrawal)",
+        "ppf_advantage_over_fd": ppf_advantage,
+        "partial_withdrawal_from_year": partial_withdrawal_year,
+        "loan_available_year": loan_available_year,
+        "monthly_deposit_equivalent": round(annual_deposit / 12),
         "milestones": yearly,
     }
 
 
 def fd_calculator(principal: float, annual_rate: float, years: int,
-                  tax_slab: float = 30.0) -> dict:
+                  compounding: int = 4, tax_slab: float = 30.0) -> dict:
     """Fixed Deposit calculator with TDS and post-tax return.
-
+    Compounding: 1=annual, 4=quarterly (standard), 12=monthly.
+    Formula: A = P × (1 + r/n)^(n×t)  — cross-referenced with Groww.
     TDS: 10% if interest > ₹40K/yr (₹50K for seniors). Actual tax at slab rate.
     """
-    gross_amount = principal * (1 + annual_rate / 100) ** years
+    n = compounding  # compounding frequency per year
+    gross_amount = principal * (1 + annual_rate / 100 / n) ** (n * years)
     gross_interest = gross_amount - principal
     annual_interest = gross_interest / years if years > 0 else 0
 
@@ -1107,20 +1247,33 @@ def fd_calculator(principal: float, annual_rate: float, years: int,
     effective_post_tax_rate = ((principal + post_tax_return) / principal) ** (1 / years) - 1 if years > 0 else 0
     real_return = effective_post_tax_rate * 100 - 6  # assuming 6% inflation
 
+    # Compounding comparison
+    annual_amount = principal * (1 + annual_rate / 100) ** years
+    quarterly_amount = principal * (1 + annual_rate / 100 / 4) ** (4 * years)
+    monthly_amount = principal * (1 + annual_rate / 100 / 12) ** (12 * years)
+    compounding_benefit = round(gross_amount - annual_amount) if n > 1 else 0
+
+    # Annual interest for TDS planning
+    annual_interest_approx = round(gross_interest / years) if years > 0 else 0
+
     return {
         "principal": round(principal),
         "rate": annual_rate,
         "years": years,
+        "compounding": "Quarterly" if n == 4 else ("Monthly" if n == 12 else "Annually"),
         "maturity_value": round(gross_amount),
         "gross_interest": round(gross_interest),
+        "annual_interest_approx": annual_interest_approx,
         "tax_slab": tax_slab,
         "tax_on_interest": round(tax_on_interest),
         "post_tax_return": round(post_tax_return),
+        "post_tax_maturity": round(principal + post_tax_return),
         "effective_post_tax_rate": round(effective_post_tax_rate * 100, 2),
         "real_return_after_inflation": round(real_return, 2),
         "tds_applicable": tds_applicable,
         "tds_per_year": round(tds_per_year),
-        "verdict": "Negative real return" if real_return < 0 else "Positive real return",
+        "compounding_benefit": compounding_benefit,
+        "verdict": "Negative real return — consider equity/PPF" if real_return < 0 else "Positive real return",
     }
 
 
@@ -1153,6 +1306,13 @@ def education_loan_calc(loan_amount: float, annual_rate: float,
     tax_deduction_80e = annual_interest_approx * years_80e
     tax_saved_80e = tax_deduction_80e * 0.312  # 30% + cess
 
+    # Effective interest rate after tax benefit
+    effective_interest_cost = total_interest - tax_saved_80e
+    effective_rate_post_tax = (effective_interest_cost / loan_amount) / (tenure_years + moratorium_years) * 100 if loan_amount > 0 else 0
+
+    # Part-time income needed to cover EMI
+    min_income_for_emi = round(emi / 0.30)  # EMI should be <30% of income
+
     return {
         "loan_amount": round(loan_amount),
         "rate": annual_rate,
@@ -1166,6 +1326,10 @@ def education_loan_calc(loan_amount: float, annual_rate: float,
         "section_80e_deduction_total": round(tax_deduction_80e),
         "estimated_tax_saved_80e": round(tax_saved_80e),
         "effective_cost_after_tax": round(total_interest - tax_saved_80e),
+        "effective_rate_after_tax": round(effective_rate_post_tax, 2),
+        "total_cost_with_moratorium": round(total_payment + moratorium_interest),
+        "emi_to_loan_ratio": round(emi / loan_amount * 100, 2),
+        "min_income_for_emi": min_income_for_emi,
     }
 
 
@@ -1196,6 +1360,10 @@ def inflation_goal_planner(current_cost: float, years: int,
         "inflation_impact": round(future_cost - current_cost),
         "cost_multiplier": round(future_cost / current_cost, 2),
         "sip_needed": sip_scenarios,
+        "sip_at_10pct": sip_scenarios.get("sip_at_10pct", 0),
+        "sip_at_12pct": sip_scenarios.get("sip_at_12pct", 0),
+        "sip_at_14pct": sip_scenarios.get("sip_at_14pct", 0),
+        "lumpsum_needed_today": round(future_cost / (1.12 ** years)),
     }
 
 
@@ -1220,13 +1388,21 @@ def salary_hike_impact(current_ctc: float, hike_pcts: list = None) -> dict:
             "new_tax": result["tax_new_regime"],
         })
 
-    return {
+    result = {
         "current_ctc": round(current_ctc),
         "current_monthly_takehome": base["take_home_monthly_new"],
         "current_tax": base["tax_new_regime"],
         "scenarios": scenarios,
         "insight": "Effective take-home hike is always less than CTC hike due to progressive tax slabs",
     }
+    # Flatten top scenarios into result for UI display
+    for s in scenarios[:4]:
+        pct = s["hike_pct"]
+        result[f"hike_{pct}pct_new_ctc"] = s["new_ctc"]
+        result[f"hike_{pct}pct_takehome"] = s["new_monthly_takehome"]
+        result[f"hike_{pct}pct_increase"] = s["takehome_increase"]
+        result[f"hike_{pct}pct_effective"] = s["effective_hike_pct"]
+    return result
 
 
 def lumpsum_vs_sip(total_amount: float, annual_rate: float,
@@ -1241,69 +1417,154 @@ def lumpsum_vs_sip(total_amount: float, annual_rate: float,
     n = years * 12
     sip_value = monthly_sip * (((1 + r) ** n - 1) / r) * (1 + r) if r > 0 else total_amount
 
+    lump_advantage = lump_value - sip_value
+
     return {
         "total_amount": round(total_amount),
         "annual_rate": annual_rate,
         "years": years,
         "lumpsum_value": round(lump_value),
         "lumpsum_return": round(lump_value - total_amount),
+        "lumpsum_return_pct": round((lump_value - total_amount) / total_amount * 100, 1),
         "sip_monthly": round(monthly_sip),
         "sip_value": round(sip_value),
         "sip_return": round(sip_value - total_amount),
+        "sip_return_pct": round((sip_value - total_amount) / total_amount * 100, 1),
         "lumpsum_advantage": round(lump_value - sip_value),
         "verdict": "Lumpsum wins in rising markets; SIP wins in volatile/falling markets via rupee cost averaging",
     }
 
 
-def fire_calculator(monthly_expenses: float, current_savings: float = 0,
+def fire_calculator(monthly_expenses: float, current_age: int = 30,
+                    retirement_age: int = 50, current_savings: float = 0,
                     monthly_savings: float = 0, expected_return: float = 12.0,
-                    withdrawal_rate: float = 3.5, inflation: float = 6.0) -> dict:
-    """Financial Independence / Retire Early (FIRE) calculator.
+                    inflation_rate: float = 6.0, coast_fire_age: int = 0) -> dict:
+    """Enhanced FIRE calculator — 4 types of FIRE + Coast FIRE + timeline.
 
-    FIRE corpus = Annual expenses / Safe Withdrawal Rate
+    Cross-referenced with: 1% Club, ET Money, Scripbox.
+
+    Types:
+    - Lean FIRE: Minimalist lifestyle, corpus = inflation-adjusted annual expenses × 25
+    - Regular FIRE: Standard 4% rule, corpus = inflation-adjusted annual expenses × 25
+      (1% Club uses ×25; ET Money uses ×33 for more conservative estimate)
+    - Fat FIRE: Luxurious lifestyle, corpus = inflation-adjusted annual expenses × 50
+    - Barista FIRE: Part-time income covers 30%, investments cover 70%,
+      corpus = 70% of inflation-adjusted annual expenses × 33
+    - Coast FIRE: Amount needed today so it grows to FIRE number by retirement
+      (no additional investments needed after this point)
     """
-    annual_expenses = monthly_expenses * 12
-    fire_corpus = annual_expenses / (withdrawal_rate / 100)
+    years_to_retire = retirement_age - current_age
+    if years_to_retire <= 0:
+        return {"error": "Retirement age must be greater than current age"}
 
-    # Years to FIRE
-    gap = fire_corpus - current_savings
-    if gap <= 0:
-        years_to_fire = 0
-    elif monthly_savings <= 0:
-        years_to_fire = -1  # Can't reach FIRE
+    # ─── Current & future expenses ───
+    annual_expenses_today = monthly_expenses * 12
+    monthly_expenses_at_retire = monthly_expenses * (1 + inflation_rate / 100) ** years_to_retire
+    annual_expenses_at_retire = monthly_expenses_at_retire * 12
+
+    # ─── Lean FIRE: frugal lifestyle (60% of expenses × 25) ───
+    lean_annual = annual_expenses_at_retire * 0.6
+    lean_fire = lean_annual * 25
+
+    # ─── Regular FIRE: 4% rule (×25) — matching 1% Club ───
+    regular_fire = annual_expenses_at_retire * 25
+
+    # ─── Fat FIRE: comfortable lifestyle (150% expenses × 50) — 1% Club/ET Money ───
+    fat_fire = annual_expenses_at_retire * 50
+
+    # ─── Barista FIRE: part-time income covers 30% (ET Money methodology) ───
+    barista_fire = annual_expenses_at_retire * 0.70 * 33
+
+    # ─── Coast FIRE: invest now to grow to FIRE number without additional savings ───
+    coast_target_age = coast_fire_age if coast_fire_age > current_age else current_age + 2
+    years_coast_to_retire = retirement_age - coast_target_age
+    if years_coast_to_retire > 0 and expected_return > 0:
+        # PV of regular_fire discounted back to coast_fire_age
+        coast_fire = regular_fire / ((1 + expected_return / 100) ** years_coast_to_retire)
     else:
-        r = expected_return / 100 / 12
-        # How many months for current_savings + SIP to reach corpus
-        import math
-        if r > 0:
-            # FV = PV*(1+r)^n + PMT*((1+r)^n - 1)/r
-            # Solve for n: iterative
-            n = 0
-            value = current_savings
-            while value < fire_corpus and n < 600:  # max 50 years
-                value = value * (1 + r) + monthly_savings
-                n += 1
-            years_to_fire = round(n / 12, 1)
-        else:
-            years_to_fire = round(gap / (monthly_savings * 12), 1)
+        coast_fire = regular_fire
 
-    # FIRE variants
-    lean_fire = (monthly_expenses * 0.6 * 12) / (withdrawal_rate / 100)
-    fat_fire = (monthly_expenses * 1.5 * 12) / (withdrawal_rate / 100)
+    # ─── Years to reach each FIRE type (iterative SIP + growth) ───
+    def years_to_reach(target):
+        if current_savings >= target:
+            return 0
+        if monthly_savings <= 0:
+            return -1  # Can't reach
+        r = expected_return / 100 / 12
+        n = 0
+        value = current_savings
+        while value < target and n < 720:  # max 60 years
+            value = value * (1 + r) + monthly_savings
+            n += 1
+        if n >= 720:
+            return -1
+        return round(n / 12, 1)
+
+    years_lean = years_to_reach(lean_fire)
+    years_regular = years_to_reach(regular_fire)
+    years_fat = years_to_reach(fat_fire)
+    years_barista = years_to_reach(barista_fire)
+
+    # ─── Monthly SIP needed to reach regular FIRE ───
+    r_monthly = expected_return / 100 / 12
+    months = years_to_retire * 12
+    if r_monthly > 0 and months > 0:
+        gap = regular_fire - current_savings * (1 + r_monthly) ** months
+        if gap > 0:
+            sip_for_fire = gap * r_monthly / ((1 + r_monthly) ** months - 1)
+        else:
+            sip_for_fire = 0
+    else:
+        sip_for_fire = (regular_fire - current_savings) / max(months, 1)
+
+    # ─── Savings rate needed ───
+    total_monthly_income_needed = monthly_expenses + sip_for_fire
+    savings_rate_needed = (sip_for_fire / total_monthly_income_needed * 100) if total_monthly_income_needed > 0 else 0
+
+    # ─── Post-FIRE monthly income (4% rule) ───
+    post_fire_monthly = regular_fire * 0.04 / 12
+
+    # ─── FIRE type recommendation ───
+    if monthly_savings > 0:
+        if years_lean != -1 and years_lean <= years_to_retire:
+            if years_regular != -1 and years_regular <= years_to_retire:
+                if years_fat != -1 and years_fat <= years_to_retire:
+                    recommendation = "Fat FIRE"
+                else:
+                    recommendation = "Regular FIRE"
+            else:
+                recommendation = "Lean FIRE"
+        else:
+            recommendation = "Increase savings — FIRE not achievable at current rate"
+    else:
+        recommendation = "Start investing to begin your FIRE journey"
 
     return {
-        "monthly_expenses": round(monthly_expenses),
-        "annual_expenses": round(annual_expenses),
-        "withdrawal_rate": withdrawal_rate,
-        "fire_corpus_needed": round(fire_corpus),
+        "current_age": current_age,
+        "retirement_age": retirement_age,
+        "years_to_retire": years_to_retire,
+        "monthly_expenses_today": round(monthly_expenses),
+        "annual_expenses_today": round(annual_expenses_today),
+        "monthly_expenses_at_retire": round(monthly_expenses_at_retire),
+        "annual_expenses_at_retire": round(annual_expenses_at_retire),
+        "inflation_rate": inflation_rate,
+        "expected_return": expected_return,
+        "lean_fire_corpus": round(lean_fire),
+        "regular_fire_corpus": round(regular_fire),
+        "fat_fire_corpus": round(fat_fire),
+        "barista_fire_corpus": round(barista_fire),
+        "coast_fire_corpus": round(coast_fire),
+        "coast_fire_age": coast_target_age,
+        "years_to_lean_fire": years_lean,
+        "years_to_regular_fire": years_regular,
+        "years_to_fat_fire": years_fat,
+        "years_to_barista_fire": years_barista,
         "current_savings": round(current_savings),
         "monthly_savings": round(monthly_savings),
-        "gap": round(max(0, gap)),
-        "years_to_fire": years_to_fire,
-        "lean_fire_corpus": round(lean_fire),
-        "regular_fire_corpus": round(fire_corpus),
-        "fat_fire_corpus": round(fat_fire),
-        "post_fire_monthly_income": round(fire_corpus * withdrawal_rate / 100 / 12),
+        "sip_needed_for_fire": round(sip_for_fire),
+        "savings_rate_needed_pct": round(savings_rate_needed, 1),
+        "post_fire_monthly_income": round(post_fire_monthly),
+        "fire_recommendation": recommendation,
     }
 
 
@@ -1489,3 +1750,760 @@ def payment_required(future_amount: float = 0, present_value_amt: float = 0,
         "months": periods,
         "total_paid": round(pmt * periods + present_value_amt, 2),
     }
+
+
+# ──────────────────────── Groww-style Calculators ────────────────────────
+
+def rd_calculator(monthly_deposit: float, annual_rate: float, years: int) -> dict:
+    """Recurring Deposit calculator — quarterly compounding per RBI norms."""
+    r = annual_rate / 100
+    n = 4  # quarterly compounding
+    months = int(years * 12)
+    maturity = 0.0
+    for m in range(1, months + 1):
+        remaining_quarters = (months - m + 1) / 3
+        maturity += monthly_deposit * (1 + r / n) ** (n * remaining_quarters / n)
+    # Simpler standard formula: sum of compound interest on each installment
+    # Each deposit of P earns interest for (months - m) months with quarterly compounding
+    maturity = 0.0
+    for m in range(months):
+        remaining_months = months - m
+        t_years = remaining_months / 12
+        amount = monthly_deposit * (1 + r / n) ** (n * t_years)
+        maturity += amount
+    total_invested = monthly_deposit * months
+    total_interest = maturity - total_invested
+    wealth_multiplier = round(maturity / total_invested, 2) if total_invested > 0 else 0
+
+    # Compare with SIP at same rate
+    r_sip = annual_rate / 100 / 12
+    if r_sip > 0:
+        sip_value = monthly_deposit * (((1 + r_sip) ** months - 1) / r_sip) * (1 + r_sip)
+    else:
+        sip_value = total_invested
+    sip_advantage = round(sip_value - maturity)
+
+    return {
+        "monthly_deposit": monthly_deposit,
+        "annual_rate": annual_rate,
+        "years": years,
+        "total_invested": round(total_invested, 2),
+        "maturity_value": round(maturity, 2),
+        "total_interest": round(total_interest, 2),
+        "effective_yield_pct": round((maturity / total_invested - 1) * 100, 2) if total_invested > 0 else 0,
+        "wealth_multiplier": wealth_multiplier,
+        "monthly_interest_approx": round(total_interest / months) if months > 0 else 0,
+        "sip_mf_comparison": round(sip_value),
+        "sip_advantage_over_rd": sip_advantage,
+    }
+
+
+def ssy_calculator(annual_deposit: float, girl_age: int,
+                   current_rate: float = 8.2) -> dict:
+    """Sukanya Samriddhi Yojana — deposits for first 15 years, maturity 21 years from opening.
+    Interest compounded annually at government-set rate.
+    Cross-referenced with Groww, ClearTax, India Post SSY rules."""
+    deposit_years = 15  # must deposit for first 15 years (incl. opening year)
+    maturity_years = 21  # account matures 21 years from date of opening
+    if girl_age > 10 or girl_age < 0:
+        return {"error": "SSY account can only be opened for girls aged 0-10"}
+
+    r = current_rate / 100
+    balance = 0.0
+
+    for year in range(1, maturity_years + 1):
+        deposit = annual_deposit if year <= deposit_years else 0
+        balance = (balance + deposit) * (1 + r)
+
+    total_deposited = annual_deposit * deposit_years
+    total_interest = balance - total_deposited
+    wealth_multiplier = round(balance / total_deposited, 2) if total_deposited > 0 else 0
+
+    # Partial withdrawal: 50% of balance at end of previous year allowed after girl turns 18
+    partial_withdrawal_age = 18
+    partial_withdrawal_year = max(1, partial_withdrawal_age - girl_age)
+
+    return {
+        "annual_deposit": annual_deposit,
+        "girl_age": girl_age,
+        "interest_rate": current_rate,
+        "deposit_years": deposit_years,
+        "maturity_years": maturity_years,
+        "maturity_year_from_now": maturity_years,
+        "total_deposited": round(total_deposited, 2),
+        "total_interest": round(total_interest, 2),
+        "maturity_value": round(balance, 2),
+        "wealth_multiplier": wealth_multiplier,
+        "tax_benefit_80c": min(round(annual_deposit), 150000),
+        "partial_withdrawal_after_year": partial_withdrawal_year,
+        "girl_age_at_maturity": girl_age + maturity_years,
+        "monthly_deposit_equivalent": round(annual_deposit / 12),
+    }
+
+
+def nps_calculator(monthly_contribution: float, current_age: int,
+                   expected_return: float = 10.0, annuity_pct: float = 40.0) -> dict:
+    """National Pension System — monthly contribution till 60, with annuity purchase requirement.
+    Minimum 40% of corpus must be used to buy annuity; remaining 60% is lump sum (partially taxable)."""
+    retirement_age = 60
+    years = retirement_age - current_age
+    if years <= 0:
+        return {"error": "Current age must be less than 60"}
+
+    r_monthly = expected_return / 100 / 12
+    months = years * 12
+
+    # Future value of monthly contributions (annuity formula)
+    if r_monthly > 0:
+        fv = monthly_contribution * (((1 + r_monthly) ** months - 1) / r_monthly) * (1 + r_monthly)
+    else:
+        fv = monthly_contribution * months
+
+    total_invested = monthly_contribution * months
+    total_interest = fv - total_invested
+    annuity_investment = fv * (annuity_pct / 100)
+    lump_sum = fv - annuity_investment
+
+    # Estimate monthly pension from annuity (assuming 6% annuity rate)
+    annuity_rate = 6.0
+    est_monthly_pension = annuity_investment * (annuity_rate / 100) / 12
+
+    # Tax benefits: 80CCD(1) up to 1.5L, 80CCD(1B) additional 50K
+    annual_contribution = monthly_contribution * 12
+    tax_80ccd1 = min(annual_contribution, 150000)
+    tax_80ccd1b = min(annual_contribution, 50000)  # additional
+    total_annual_tax_saving = (tax_80ccd1 + tax_80ccd1b) * 0.312  # 30% + cess
+
+    # Wealth multiplier
+    wealth_multiplier = round(fv / total_invested, 2) if total_invested > 0 else 0
+
+    return {
+        "monthly_contribution": monthly_contribution,
+        "current_age": current_age,
+        "years_to_retire": years,
+        "expected_return_pct": expected_return,
+        "total_invested": round(total_invested, 2),
+        "total_interest": round(total_interest, 2),
+        "total_corpus": round(fv, 2),
+        "annuity_investment": round(annuity_investment, 2),
+        "lump_sum_withdrawal": round(lump_sum, 2),
+        "est_monthly_pension": round(est_monthly_pension, 2),
+        "annuity_pct": annuity_pct,
+        "wealth_multiplier": wealth_multiplier,
+        "tax_saving_80ccd1": round(tax_80ccd1),
+        "tax_saving_80ccd1b": round(tax_80ccd1b),
+        "annual_tax_saved": round(total_annual_tax_saving),
+        "total_tax_saved_lifetime": round(total_annual_tax_saving * years),
+    }
+
+
+def swp_calculator(total_investment: float, withdrawal_per_month: float,
+                   expected_return: float = 8.0, years: int = 5) -> dict:
+    """Systematic Withdrawal Plan — invest lump sum, withdraw monthly while corpus earns returns.
+    Uses geometric monthly rate: (1+r)^(1/12)-1 — cross-referenced with Groww."""
+    r_monthly = (1 + expected_return / 100) ** (1/12) - 1
+    months = years * 12
+    balance = total_investment
+    total_withdrawn = 0.0
+
+    for m in range(months):
+        interest = balance * r_monthly
+        balance = balance + interest - withdrawal_per_month
+        total_withdrawn += withdrawal_per_month
+        if balance <= 0:
+            balance = 0
+            total_withdrawn -= (withdrawal_per_month + balance)  # adjust last partial
+            return {
+                "total_investment": total_investment,
+                "withdrawal_per_month": withdrawal_per_month,
+                "expected_return_pct": expected_return,
+                "years": years,
+                "total_withdrawn": round(total_withdrawn, 2),
+                "final_value": 0,
+                "corpus_lasted_months": m + 1,
+                "corpus_exhausted": True,
+            }
+
+    return {
+        "total_investment": total_investment,
+        "withdrawal_per_month": withdrawal_per_month,
+        "expected_return_pct": expected_return,
+        "years": years,
+        "total_withdrawn": round(total_withdrawn, 2),
+        "final_value": round(balance, 2),
+        "corpus_lasted_months": months,
+        "corpus_exhausted": False,
+        "total_earnings": round(total_withdrawn + balance - total_investment, 2),
+        "effective_return": round((total_withdrawn + balance - total_investment) / total_investment * 100, 1),
+        "sustainable_withdrawal": round(total_investment * r_monthly, 2),
+    }
+
+
+def nsc_calculator(investment_amount: float, interest_rate: float = 7.7,
+                   years: int = 5) -> dict:
+    """National Savings Certificate — annual compounding, interest reinvested, paid at maturity.
+    Lock-in: 5 years. Tax benefit under 80C up to ₹1.5L."""
+    r = interest_rate / 100
+    maturity_value = investment_amount * (1 + r) ** years
+    total_interest = maturity_value - investment_amount
+    tax_benefit_80c = min(investment_amount, 150000)
+    return {
+        "investment_amount": investment_amount,
+        "interest_rate": interest_rate,
+        "tenure_years": years,
+        "maturity_value": round(maturity_value, 2),
+        "total_interest": round(total_interest, 2),
+        "effective_yield_pct": round((maturity_value / investment_amount - 1) * 100, 2),
+        "tax_benefit_80c": round(tax_benefit_80c, 2),
+    }
+
+
+def gratuity_calculator(basic_salary_monthly: float, years_of_service: float) -> dict:
+    """Gratuity as per Payment of Gratuity Act 1972.
+    Formula: G = N × B × 15/26
+    N = years of service (rounded), B = last drawn basic+DA monthly.
+    Maximum exemption: ₹20 lakh."""
+    # Round years: >= 6 months rounds up
+    import math
+    fractional = years_of_service - int(years_of_service)
+    if fractional >= 0.5:
+        n = int(years_of_service) + 1
+    else:
+        n = int(years_of_service)
+
+    if n < 5:
+        return {"error": "Minimum 5 years of continuous service required for gratuity"}
+
+    gratuity = n * basic_salary_monthly * 15 / 26
+    max_exempt = 2000000  # ₹20 lakh
+    taxable_gratuity = max(0, gratuity - max_exempt)
+    exempt_amount = min(gratuity, max_exempt)
+
+    # Projections at different service years
+    projections = {}
+    for yr in [5, 10, 15, 20, 25, 30]:
+        if yr >= 5:
+            proj = yr * basic_salary_monthly * 15 / 26
+            projections[f"gratuity_at_{yr}yr"] = round(proj)
+
+    return {
+        "basic_salary_monthly": basic_salary_monthly,
+        "years_of_service": n,
+        "gratuity_amount": round(gratuity, 2),
+        "tax_exempt_amount": round(exempt_amount, 2),
+        "taxable_amount": round(taxable_gratuity, 2),
+        "tax_on_gratuity": round(taxable_gratuity * 0.30) if taxable_gratuity > 0 else 0,
+        "net_gratuity": round(gratuity - max(0, taxable_gratuity * 0.30)),
+        "max_exemption_limit": max_exempt,
+        "monthly_equivalent": round(gratuity / (n * 12)) if n > 0 else 0,
+        **projections,
+    }
+
+
+def epf_calculator(basic_salary_monthly: float, current_age: int,
+                   employee_contribution_pct: float = 12.0,
+                   employer_contribution_pct: float = 12.0,
+                   annual_salary_hike_pct: float = 5.0,
+                   epf_rate: float = 8.25,
+                   existing_balance: float = 0.0) -> dict:
+    """Employee Provident Fund calculator.
+    Employee contributes 12% of basic+DA. Employer also contributes 12% (EPF+EPS combined).
+    Shows total retirement corpus (EPF+EPS) — cross-referenced with Groww.
+    Interest compounded monthly at EPF rate."""
+    retirement_age = 58
+    years = retirement_age - current_age
+    if years <= 0:
+        return {"error": "Current age must be less than 58 for EPF calculation"}
+
+    r_monthly = epf_rate / 100 / 12
+    balance = existing_balance
+    total_employee = 0.0
+    total_employer = 0.0
+    salary = basic_salary_monthly
+
+    for year in range(years):
+        for month in range(12):
+            emp_contrib = salary * (employee_contribution_pct / 100)
+            empr_contrib = salary * (employer_contribution_pct / 100)
+            interest = balance * r_monthly
+            balance += emp_contrib + empr_contrib + interest
+            total_employee += emp_contrib
+            total_employer += empr_contrib
+        salary *= (1 + annual_salary_hike_pct / 100)
+
+    total_interest = balance - total_employee - total_employer - existing_balance
+    total_contributions = total_employee + total_employer
+    wealth_multiplier = round(balance / total_contributions, 2) if total_contributions > 0 else 0
+
+    # Estimated monthly pension (using 8% annuity rate on total corpus)
+    est_monthly_pension = round(balance * 0.08 / 12)
+
+    # Final salary at retirement
+    final_salary = basic_salary_monthly * (1 + annual_salary_hike_pct / 100) ** (years - 1)
+
+    return {
+        "current_basic_salary": basic_salary_monthly,
+        "current_age": current_age,
+        "retirement_age": retirement_age,
+        "years_to_retire": years,
+        "epf_rate": epf_rate,
+        "total_employee_contribution": round(total_employee, 2),
+        "total_employer_contribution": round(total_employer, 2),
+        "total_contributions": round(total_contributions, 2),
+        "total_interest_earned": round(total_interest, 2),
+        "maturity_value": round(balance, 2),
+        "wealth_multiplier": wealth_multiplier,
+        "est_monthly_pension": est_monthly_pension,
+        "final_basic_salary": round(final_salary),
+        "existing_balance": existing_balance,
+    }
+
+
+def scss_calculator(investment_amount: float, interest_rate: float = 8.2,
+                    tenure_years: int = 5) -> dict:
+    """Senior Citizens Savings Scheme — simple interest paid quarterly.
+    Max investment: ₹30 lakh. Tenure: 5 years (extendable by 3).
+    Tax benefit under 80C."""
+    if investment_amount > 3000000:
+        return {"error": "Maximum SCSS investment is ₹30 lakh"}
+
+    quarterly_interest = investment_amount * (interest_rate / 100) / 4
+    total_quarters = tenure_years * 4
+    total_interest = quarterly_interest * total_quarters
+    maturity_value = investment_amount + total_interest
+    annual_income = quarterly_interest * 4
+    return {
+        "investment_amount": investment_amount,
+        "interest_rate": interest_rate,
+        "tenure_years": tenure_years,
+        "quarterly_interest": round(quarterly_interest, 2),
+        "annual_income": round(annual_income, 2),
+        "total_interest": round(total_interest, 2),
+        "maturity_value": round(maturity_value, 2),
+        "tax_benefit_80c": round(min(investment_amount, 150000), 2),
+    }
+
+
+def post_office_mis_calculator(investment_amount: float,
+                                interest_rate: float = 7.4) -> dict:
+    """Post Office Monthly Income Scheme — fixed monthly income for 5 years.
+    Max: ₹9 lakh (single), ₹15 lakh (joint). Simple interest paid monthly."""
+    tenure_years = 5
+    monthly_interest = investment_amount * (interest_rate / 100) / 12
+    total_interest = monthly_interest * tenure_years * 12
+    maturity_value = investment_amount  # principal returned at maturity
+    return {
+        "investment_amount": investment_amount,
+        "interest_rate": interest_rate,
+        "tenure_years": tenure_years,
+        "monthly_income": round(monthly_interest, 2),
+        "annual_income": round(monthly_interest * 12, 2),
+        "total_interest": round(total_interest, 2),
+        "maturity_value": round(maturity_value, 2),
+    }
+
+
+def apy_calculator(monthly_contribution: float, current_age: int,
+                   desired_pension: float = 5000) -> dict:
+    """Atal Pension Yojana — government pension scheme for unorganised sector.
+    Age 18-40 eligible. Pension starts at 60. Fixed pension: ₹1000-5000/month."""
+    if current_age < 18 or current_age > 40:
+        return {"error": "APY is available for ages 18-40 only"}
+
+    years_to_contribute = 60 - current_age
+    months = years_to_contribute * 12
+    total_invested = monthly_contribution * months
+
+    # APY pension amounts are fixed by govt. We estimate corpus needed.
+    # For ₹5000/month pension, approx corpus needed is ~₹8.5L
+    pension_corpus_map = {1000: 170000, 2000: 340000, 3000: 510000, 4000: 680000, 5000: 850000}
+
+    # Find closest pension slab
+    pension_slabs = [1000, 2000, 3000, 4000, 5000]
+    closest_pension = min(pension_slabs, key=lambda x: abs(x - desired_pension))
+    estimated_corpus = pension_corpus_map.get(closest_pension, 850000)
+
+    return {
+        "monthly_contribution": monthly_contribution,
+        "current_age": current_age,
+        "years_to_contribute": years_to_contribute,
+        "total_invested": round(total_invested, 2),
+        "monthly_pension_at_60": closest_pension,
+        "estimated_corpus": estimated_corpus,
+        "spouse_pension": closest_pension,  # same pension to spouse after death
+        "nominee_receives": estimated_corpus,  # corpus to nominee after both deaths
+    }
+
+
+def gst_calculator(amount: float, gst_rate: float = 18.0,
+                   is_inclusive: bool = False) -> dict:
+    """GST Calculator — compute GST amount, CGST, SGST from pre/post-tax amount."""
+    if is_inclusive:
+        # Amount includes GST, find base
+        base_amount = amount / (1 + gst_rate / 100)
+        gst_amount = amount - base_amount
+    else:
+        base_amount = amount
+        gst_amount = amount * (gst_rate / 100)
+
+    total = base_amount + gst_amount
+    cgst = gst_amount / 2  # Central GST
+    sgst = gst_amount / 2  # State GST (or IGST for interstate)
+    return {
+        "base_amount": round(base_amount, 2),
+        "gst_rate": gst_rate,
+        "gst_amount": round(gst_amount, 2),
+        "cgst": round(cgst, 2),
+        "sgst": round(sgst, 2),
+        "total_amount": round(total, 2),
+        "is_inclusive": is_inclusive,
+    }
+
+
+def tds_calculator(income: float, income_type: str = "salary",
+                   pan_available: bool = True) -> dict:
+    """TDS (Tax Deducted at Source) calculator for common income types."""
+    tds_rates = {
+        "salary": {"with_pan": 10.0, "without_pan": 20.0, "threshold": 250000},
+        "interest": {"with_pan": 10.0, "without_pan": 20.0, "threshold": 40000},
+        "rent": {"with_pan": 10.0, "without_pan": 20.0, "threshold": 240000},
+        "professional_fees": {"with_pan": 10.0, "without_pan": 20.0, "threshold": 30000},
+        "commission": {"with_pan": 5.0, "without_pan": 20.0, "threshold": 15000},
+        "dividend": {"with_pan": 10.0, "without_pan": 20.0, "threshold": 5000},
+        "lottery": {"with_pan": 30.0, "without_pan": 30.0, "threshold": 10000},
+        "property_sale": {"with_pan": 1.0, "without_pan": 20.0, "threshold": 5000000},
+    }
+
+    if income_type not in tds_rates:
+        return {"error": f"Unknown income type. Use: {', '.join(tds_rates.keys())}"}
+
+    rates = tds_rates[income_type]
+    threshold = rates["threshold"]
+    rate = rates["with_pan"] if pan_available else rates["without_pan"]
+
+    if income <= threshold:
+        tds = 0
+    else:
+        tds = income * (rate / 100)
+
+    return {
+        "income": income,
+        "income_type": income_type,
+        "pan_available": pan_available,
+        "threshold": threshold,
+        "tds_rate_pct": rate,
+        "tds_amount": round(tds, 2),
+        "net_amount": round(income - tds, 2),
+    }
+
+
+def simple_interest(principal: float, rate: float, years: float) -> dict:
+    """Simple interest calculator."""
+    interest = principal * (rate / 100) * years
+    total = principal + interest
+    return {
+        "principal": principal,
+        "rate": rate,
+        "years": years,
+        "interest": round(interest, 2),
+        "total_amount": round(total, 2),
+    }
+
+
+def flat_vs_reducing_rate(principal: float, flat_rate: float,
+                          reducing_rate: float, tenure_months: int) -> dict:
+    """Compare flat rate vs reducing balance rate for loans."""
+    # Flat rate EMI
+    flat_interest = principal * (flat_rate / 100) * (tenure_months / 12)
+    flat_total = principal + flat_interest
+    flat_emi = flat_total / tenure_months
+
+    # Reducing rate EMI (standard amortization)
+    r = reducing_rate / 100 / 12
+    if r > 0:
+        reducing_emi = principal * r * (1 + r) ** tenure_months / ((1 + r) ** tenure_months - 1)
+    else:
+        reducing_emi = principal / tenure_months
+    reducing_total = reducing_emi * tenure_months
+    reducing_interest = reducing_total - principal
+
+    savings = flat_total - reducing_total
+    return {
+        "principal": principal,
+        "tenure_months": tenure_months,
+        "flat_rate": flat_rate,
+        "flat_emi": round(flat_emi, 2),
+        "flat_total_interest": round(flat_interest, 2),
+        "flat_total_payment": round(flat_total, 2),
+        "reducing_rate": reducing_rate,
+        "reducing_emi": round(reducing_emi, 2),
+        "reducing_total_interest": round(reducing_interest, 2),
+        "reducing_total_payment": round(reducing_total, 2),
+        "savings_with_reducing": round(savings, 2),
+        "better_option": "Reducing Balance" if savings > 0 else "Flat Rate",
+    }
+
+
+def stock_average_calculator(purchases: list) -> dict:
+    """Calculate average price of stock purchases.
+    purchases: list of {"qty": int, "price": float}"""
+    if not purchases or len(purchases) == 0:
+        return {"error": "Provide at least one purchase with qty and price"}
+
+    total_qty = 0
+    total_cost = 0.0
+    for p in purchases:
+        qty = float(p.get("qty", 0))
+        price = float(p.get("price", 0))
+        total_qty += qty
+        total_cost += qty * price
+
+    if total_qty == 0:
+        return {"error": "Total quantity cannot be zero"}
+
+    avg_price = total_cost / total_qty
+    return {
+        "total_quantity": int(total_qty),
+        "total_investment": round(total_cost, 2),
+        "average_price": round(avg_price, 2),
+        "num_purchases": len(purchases),
+    }
+
+
+def kvp_calculator(investment_amount: float, interest_rate: float = 7.5) -> dict:
+    """Kisan Vikas Patra — doubles your investment. Compounded annually.
+    Current rate ~7.5%, doubles in ~115 months."""
+    r = interest_rate / 100
+    # Time to double: 72/rate (approx) or exact: log(2)/log(1+r)
+    import math
+    years_to_double = math.log(2) / math.log(1 + r)
+    months_to_double = int(years_to_double * 12)
+    maturity_value = investment_amount * 2
+    total_interest = investment_amount
+    return {
+        "investment_amount": investment_amount,
+        "interest_rate": interest_rate,
+        "maturity_value": round(maturity_value, 2),
+        "total_interest": round(total_interest, 2),
+        "years_to_double": round(years_to_double, 1),
+        "months_to_double": months_to_double,
+    }
+
+
+def mutual_fund_returns(investment_amount: float, annual_return: float,
+                        years: int, expense_ratio: float = 1.5,
+                        is_sip: bool = False) -> dict:
+    """Mutual Fund returns calculator — accounts for expense ratio.
+    Works for both lumpsum and SIP modes."""
+    net_return = annual_return - expense_ratio
+    if net_return < 0:
+        net_return = 0
+
+    if is_sip:
+        # SIP mode — monthly compounding
+        r = net_return / 100 / 12
+        months = years * 12
+        if r > 0:
+            fv = investment_amount * (((1 + r) ** months - 1) / r) * (1 + r)
+        else:
+            fv = investment_amount * months
+        total_invested = investment_amount * months
+    else:
+        # Lumpsum mode
+        fv = investment_amount * (1 + net_return / 100) ** years
+        total_invested = investment_amount
+
+    wealth_gained = fv - total_invested
+    # Compare with gross (no expense ratio)
+    if is_sip:
+        r_gross = annual_return / 100 / 12
+        months = years * 12
+        fv_gross = investment_amount * (((1 + r_gross) ** months - 1) / r_gross) * (1 + r_gross) if r_gross > 0 else investment_amount * months
+    else:
+        fv_gross = investment_amount * (1 + annual_return / 100) ** years
+    expense_ratio_impact = fv_gross - fv
+
+    return {
+        "investment_amount": investment_amount,
+        "annual_return_pct": annual_return,
+        "expense_ratio_pct": expense_ratio,
+        "net_return_pct": round(net_return, 2),
+        "years": years,
+        "mode": "SIP" if is_sip else "Lumpsum",
+        "total_invested": round(total_invested, 2),
+        "future_value": round(fv, 2),
+        "wealth_gained": round(wealth_gained, 2),
+        "expense_ratio_impact": round(expense_ratio_impact, 2),
+    }
+
+
+# ──────────────────────── Lumpsum Calculator ────────────────────────
+
+def lumpsum_calculator(principal: float, annual_rate: float, years: int) -> dict:
+    """Calculate lumpsum mutual fund / investment returns.
+
+    Formula: A = P × (1 + r)^t  (annual compounding, standard for MF NAV growth).
+    Cross-referenced with Groww, ET Money, ClearTax lumpsum calculators.
+    """
+    future_value = principal * (1 + annual_rate / 100) ** years
+    wealth_gained = future_value - principal
+    absolute_return_pct = (wealth_gained / principal) * 100 if principal > 0 else 0
+    # CAGR is simply the input rate for lumpsum, but we verify:
+    cagr = ((future_value / principal) ** (1 / years) - 1) * 100 if (principal > 0 and years > 0) else 0
+
+    # Delay cost
+    delay_costs = {}
+    for delay in [1, 3, 5]:
+        if years - delay > 0:
+            fv_d = principal * (1 + annual_rate / 100) ** (years - delay)
+            delay_costs[f"delay_{delay}yr_loss"] = round(future_value - fv_d)
+
+    # Doubling time (Rule of 72)
+    doubling_years = round(72 / annual_rate, 1) if annual_rate > 0 else 0
+
+    # Inflation-adjusted (real) return
+    inflation = 6.0
+    real_return = ((1 + annual_rate / 100) / (1 + inflation / 100) - 1) * 100
+    real_future_value = principal * (1 + real_return / 100) ** years
+
+    return {
+        "invested_amount": round(principal),
+        "annual_rate": annual_rate,
+        "years": years,
+        "future_value": round(future_value),
+        "wealth_gained": round(wealth_gained),
+        "absolute_return_pct": round(absolute_return_pct, 1),
+        "cagr_pct": round(cagr, 2),
+        "wealth_multiplier": round(future_value / principal, 2) if principal > 0 else 0,
+        "doubling_time_years": doubling_years,
+        "real_return_pct": round(real_return, 2),
+        "inflation_adjusted_value": round(real_future_value),
+        **delay_costs,
+    }
+
+
+# ──────────────────────── XIRR Calculator ────────────────────────
+
+def xirr_calculator(cashflows: list[dict]) -> dict:
+    """Calculate XIRR (Extended Internal Rate of Return) using Newton-Raphson.
+
+    XIRR solves: Σ C_i / (1 + rate)^((d_i - d_0) / 365) = 0
+
+    Args:
+        cashflows: list of {"date": "YYYY-MM-DD", "amount": float}
+                   Negative = investment/outflow, Positive = redemption/inflow.
+                   Must have at least one negative and one positive.
+
+    Cross-referenced with Excel XIRR, Groww, Zerodha Coin methodologies.
+    Uses Newton-Raphson iteration (same as Excel).
+    """
+    from datetime import datetime
+
+    if len(cashflows) < 2:
+        return {"error": "Need at least 2 cashflows (investment + redemption)"}
+
+    # Parse and sort by date
+    parsed = []
+    for cf in cashflows:
+        try:
+            d = datetime.strptime(cf["date"], "%Y-%m-%d")
+        except (ValueError, KeyError):
+            return {"error": f"Invalid date format: {cf.get('date', '?')}. Use YYYY-MM-DD"}
+        try:
+            amt = float(cf["amount"])
+        except (ValueError, KeyError):
+            return {"error": f"Invalid amount: {cf.get('amount', '?')}"}
+        parsed.append((d, amt))
+
+    parsed.sort(key=lambda x: x[0])
+    dates = [p[0] for p in parsed]
+    amounts = [p[1] for p in parsed]
+
+    has_neg = any(a < 0 for a in amounts)
+    has_pos = any(a > 0 for a in amounts)
+    if not (has_neg and has_pos):
+        return {"error": "Need at least one investment (negative) and one redemption (positive)"}
+
+    d0 = dates[0]
+    # Year fractions from first date
+    years_frac = [(d - d0).days / 365.0 for d in dates]
+
+    # Newton-Raphson to solve Σ amounts[i] / (1+rate)^years_frac[i] = 0
+    def npv(rate):
+        return sum(a / (1 + rate) ** y for a, y in zip(amounts, years_frac))
+
+    def npv_deriv(rate):
+        return sum(-y * a / (1 + rate) ** (y + 1) for a, y in zip(amounts, years_frac))
+
+    rate = 0.1  # initial guess 10%
+    for _ in range(200):
+        nv = npv(rate)
+        nd = npv_deriv(rate)
+        if abs(nd) < 1e-14:
+            break
+        new_rate = rate - nv / nd
+        # Clamp to avoid divergence
+        if new_rate <= -1:
+            new_rate = (rate - 1) / 2
+        if abs(new_rate - rate) < 1e-9:
+            rate = new_rate
+            break
+        rate = new_rate
+
+    # Verify convergence
+    if abs(npv(rate)) > 0.01:
+        return {"error": "XIRR did not converge — check your cashflows"}
+
+    total_invested = sum(abs(a) for a in amounts if a < 0)
+    total_received = sum(a for a in amounts if a > 0)
+    net_gain = total_received - total_invested
+    holding_days = (dates[-1] - dates[0]).days
+
+    return {
+        "xirr_pct": round(rate * 100, 2),
+        "total_invested": round(total_invested),
+        "total_received": round(total_received),
+        "net_gain": round(net_gain),
+        "absolute_return_pct": round(net_gain / total_invested * 100, 2) if total_invested > 0 else 0,
+        "holding_period_days": holding_days,
+        "num_transactions": len(cashflows),
+    }
+
+
+def xirr_sip_calculator(sip_amount: float, num_months: int,
+                        maturity_value: float, start_date: str = "2024-01-01") -> dict:
+    """Simplified XIRR for SIP — calculates XIRR given monthly SIP and final value.
+
+    This is the Groww-style XIRR calculator: provide SIP amount, duration,
+    and maturity amount to get the XIRR.
+    """
+    from datetime import datetime, timedelta
+
+    if num_months < 1:
+        return {"error": "Number of months must be at least 1"}
+    if maturity_value <= 0:
+        return {"error": "Maturity value must be positive"}
+
+    try:
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+    except ValueError:
+        return {"error": f"Invalid start date: {start_date}. Use YYYY-MM-DD"}
+
+    # Build cashflows: monthly SIP (negative) + final redemption (positive)
+    cashflows = []
+    for i in range(num_months):
+        d = start + timedelta(days=i * 30)  # approximate monthly
+        cashflows.append({"date": d.strftime("%Y-%m-%d"), "amount": -sip_amount})
+
+    # Maturity date
+    maturity_date = start + timedelta(days=num_months * 30)
+    cashflows.append({"date": maturity_date.strftime("%Y-%m-%d"), "amount": maturity_value})
+
+    result = xirr_calculator(cashflows)
+    if "error" in result:
+        return result
+
+    result["sip_amount"] = sip_amount
+    result["num_months"] = num_months
+    result["maturity_value"] = round(maturity_value)
+    return result

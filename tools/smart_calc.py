@@ -140,6 +140,17 @@ def _detect_topics(query: str) -> set:
         "gold":          {"gold", "sgb"},
         "fd":            {"fd"},
         "ppf":           {"ppf"},
+        "rd":            {"rd"},
+        "ssy":           {"ssy", "sukanya"},
+        "nps":           {"nps"},
+        "nsc":           {"nsc"},
+        "scss":          {"scss"},
+        "gst":           {"gst"},
+        "gratuity":      {"gratuity"},
+        "epf":           {"epf"},
+        "kvp":           {"kvp"},
+        "swp":           {"swp"},
+        "apy":           {"apy"},
         "crypto":        {"crypto", "bitcoin", "btc", "ethereum", "eth", "web3"},
         "education":     {"college", "abroad"},
         "goal":          {"goal", "target"},
@@ -163,8 +174,19 @@ def _detect_topics(query: str) -> set:
         "hra":           ["house rent", "rent allowance", "rent exemption"],
         "property":      ["real estate", "rent vs buy", "buy vs rent", r"(?:buy|purchase|own).*(?:house|home|flat|place|apartment|villa)", r"(?:house|home|flat|apartment).*(?:buy|purchase|own)", "first home", "place of my own"],
         "gold":          ["sovereign gold", "gold bond", "gold etf", "digital gold"],
-        "fd":            ["fixed deposit", "bank deposit", "recurring deposit"],
+        "fd":            ["fixed deposit", "bank deposit"],
+        "rd":            ["recurring deposit"],
         "ppf":           ["public provident", "provident fund"],
+        "ssy":           ["sukanya samriddhi", "girl child", "beti bachao"],
+        "nps":           ["national pension", "pension system", "pension scheme"],
+        "nsc":           ["national savings certificate", "savings certificate"],
+        "scss":          ["senior citizen.*sav", "scss scheme"],
+        "gst":           ["goods and service", "goods & service", "gst rate", "gst calc"],
+        "gratuity":      ["gratuity calc", "years of service.*gratuit", "gratuit.*years"],
+        "epf":           ["employee.*provident", "provident fund", "pf balance", "pf calc"],
+        "kvp":           ["kisan vikas", "kvp double"],
+        "swp":           ["systematic withdrawal", "withdrawal plan", "regular income.*corpus"],
+        "apy":           ["atal pension", "pension yojana"],
         "education":     ["child education", "abroad study", "ms abroad", "kids school"],
         "goal":          ["plan for", "planning for", "save for", "saving for"],
         "capital_gains": ["capital gain", "sell shares", "book profit", "tax on sale", "profit on", r"sold.*(?:share|stock|mutual|property|flat|house|gold|crypto|bitcoin)", r"(?:sell|selling).*(?:share|stock|mutual|property|flat|house|gold|crypto)"],
@@ -741,12 +763,22 @@ def smart_calculate(query: str, profile: dict = None) -> str:
         # FIRE analysis
         if income and "ctc" in computed:
             monthly_savings_est = monthly_th - monthly_exp
-            fire = fire_calculator(monthly_exp, 0, monthly_savings_est)
+            fire = fire_calculator(monthly_exp, current_age=current_age,
+                                   retirement_age=retire_age, current_savings=0,
+                                   monthly_savings=monthly_savings_est)
             add("FIRE ANALYSIS", (
-                f"Lean FIRE (60% expenses): {fmt_inr(fire['lean_fire_corpus'])}\n"
-                f"Regular FIRE: {fmt_inr(fire['regular_fire_corpus'])}\n"
-                f"Fat FIRE (150% expenses): {fmt_inr(fire['fat_fire_corpus'])}\n"
-                f"Years to FIRE: {fire['years_to_fire']} (saving {fmt_inr(monthly_savings_est)}/mo @12%)"
+                f"Monthly expenses at retirement (6% inflation): {fmt_inr(fire['monthly_expenses_at_retire'])}/mo\n"
+                f"🟢 Lean FIRE (frugal, ×25 of 60%): {fmt_inr(fire['lean_fire_corpus'])}"
+                f" — {fire['years_to_lean_fire']} years\n"
+                f"🔵 Regular FIRE (4% rule, ×25): {fmt_inr(fire['regular_fire_corpus'])}"
+                f" — {fire['years_to_regular_fire']} years\n"
+                f"☕ Barista FIRE (70% covered, ×33): {fmt_inr(fire['barista_fire_corpus'])}"
+                f" — {fire['years_to_barista_fire']} years\n"
+                f"💎 Fat FIRE (luxury, ×50): {fmt_inr(fire['fat_fire_corpus'])}"
+                f" — {fire['years_to_fat_fire']} years\n"
+                f"🏖️ Coast FIRE (invest once): {fmt_inr(fire['coast_fire_corpus'])}\n"
+                f"SIP needed for Regular FIRE: {fmt_inr(fire['sip_needed_for_fire'])}/mo\n"
+                f"Recommendation: {fire['fire_recommendation']}"
             ))
 
     # ═══════════════════ PROPERTY / RENT VS BUY ═══════════════════
@@ -807,6 +839,207 @@ def smart_calculate(query: str, profile: dict = None) -> str:
             f"Maturity: {fmt_inr(ppf['maturity_value'])} | Interest: {fmt_inr(ppf['total_interest'])}\n"
             f"Tax: {ppf['tax_status']}"
         ))
+
+    # ═══════════════════ RD (RECURRING DEPOSIT) ═══════════════════
+    if "rd" in topics:
+        from tools.financial_calc import rd_calculator
+        amt = None
+        for n in numbers:
+            if 500 <= n <= 200000 and (not income or n != income):
+                amt = n
+                break
+        amt = amt or 5000
+        yrs = 5
+        # Look for year/tenure in query context
+        yr_m = re.search(r'(\d+)\s*(?:years?|yrs?)\b', query.lower())
+        if yr_m:
+            yrs = int(yr_m.group(1))
+        rd = rd_calculator(amt, 6.5, yrs)
+        computed.add("rd")
+        add("RD ANALYSIS", (
+            f"Monthly deposit: {fmt_inr(amt)} @6.5% for {yrs}yr (quarterly compounding)\n"
+            f"Invested: {fmt_inr(rd['total_invested'])} | Maturity: {fmt_inr(rd['maturity_value'])}\n"
+            f"Interest: {fmt_inr(rd['total_interest'])} | Yield: {rd['effective_yield_pct']}%"
+        ))
+
+    # ═══════════════════ SSY (SUKANYA SAMRIDDHI) ═══════════════════
+    if "ssy" in topics:
+        from tools.financial_calc import ssy_calculator
+        amt = None
+        for n in numbers:
+            if 250 <= n <= 150000 and (not income or n != income):
+                amt = n
+                break
+        amt = amt or 150000
+        girl_age = 5
+        for n in numbers:
+            if 0 <= n <= 10 and n != amt:
+                girl_age = int(n)
+                break
+        ssy = ssy_calculator(amt, girl_age)
+        if "error" not in ssy:
+            computed.add("ssy")
+            add("SSY ANALYSIS (Sukanya Samriddhi Yojana)", (
+                f"Annual deposit: {fmt_inr(amt)} | Girl's age: {girl_age} | Rate: {ssy['interest_rate']}%\n"
+                f"Deposit for: {ssy['deposit_years']} years | Matures in: {ssy['maturity_years']} years\n"
+                f"Total deposited: {fmt_inr(ssy['total_deposited'])} | Interest: {fmt_inr(ssy['total_interest'])}\n"
+                f"Maturity value: {fmt_inr(ssy['maturity_value'])}\n"
+                f"Tax: Completely exempt (EEE — deposit, interest, maturity all tax-free)"
+            ))
+
+    # ═══════════════════ NPS (NATIONAL PENSION SYSTEM) ═══════════════════
+    if "nps" in topics:
+        from tools.financial_calc import nps_calculator
+        contrib = None
+        for n in numbers:
+            if 500 <= n <= 200000 and (not income or n != income):
+                contrib = n
+                break
+        contrib = contrib or 5000
+        age = 30
+        age_m = re.search(r'\b(?:age|am)\s*(\d{2})\b', query.lower())
+        if age_m:
+            age = int(age_m.group(1))
+        elif profile.get("age"):
+            age = int(profile["age"])
+        nps = nps_calculator(contrib, age)
+        if "error" not in nps:
+            computed.add("nps")
+            add("NPS ANALYSIS", (
+                f"Monthly: {fmt_inr(contrib)} | Age: {age} → Retire at 60 ({nps['years_to_retire']}yr)\n"
+                f"Invested: {fmt_inr(nps['total_invested'])} | Corpus: {fmt_inr(nps['total_corpus'])}\n"
+                f"Lump sum (60%): {fmt_inr(nps['lump_sum_withdrawal'])}\n"
+                f"Annuity (40%): {fmt_inr(nps['annuity_investment'])} → ~{fmt_inr(nps['est_monthly_pension'])}/mo pension\n"
+                f"Tax: Extra ₹50K deduction under 80CCD(1B) — over and above 80C"
+            ))
+
+    # ═══════════════════ NSC (NATIONAL SAVINGS CERTIFICATE) ═══════════════════
+    if "nsc" in topics:
+        from tools.financial_calc import nsc_calculator
+        amt = None
+        for n in numbers:
+            if n >= 1000 and (not income or n != income):
+                amt = n
+                break
+        amt = amt or 100000
+        nsc = nsc_calculator(amt)
+        computed.add("nsc")
+        add("NSC ANALYSIS", (
+            f"Investment: {fmt_inr(amt)} @{nsc['interest_rate']}% for {nsc['tenure_years']}yr (annual compounding)\n"
+            f"Maturity: {fmt_inr(nsc['maturity_value'])} | Interest: {fmt_inr(nsc['total_interest'])}\n"
+            f"80C benefit: {fmt_inr(nsc['tax_benefit_80c'])} | Lock-in: 5 years"
+        ))
+
+    # ═══════════════════ SCSS (SENIOR CITIZENS) ═══════════════════
+    if "scss" in topics:
+        from tools.financial_calc import scss_calculator
+        amt = None
+        for n in numbers:
+            if n >= 1000 and (not income or n != income):
+                amt = n
+                break
+        amt = amt or 500000
+        scss = scss_calculator(amt)
+        if "error" not in scss:
+            computed.add("scss")
+            add("SCSS ANALYSIS (Senior Citizens Savings Scheme)", (
+                f"Investment: {fmt_inr(amt)} @{scss['interest_rate']}% for {scss['tenure_years']}yr\n"
+                f"Quarterly income: {fmt_inr(scss['quarterly_interest'])} | Annual: {fmt_inr(scss['annual_income'])}\n"
+                f"Total interest: {fmt_inr(scss['total_interest'])} | Maturity: {fmt_inr(scss['maturity_value'])}"
+            ))
+
+    # ═══════════════════ SWP (SYSTEMATIC WITHDRAWAL) ═══════════════════
+    if "swp" in topics:
+        from tools.financial_calc import swp_calculator
+        corpus = None
+        withdrawal = None
+        for n in sorted(numbers, reverse=True):
+            if n >= 100000 and (not income or n != income):
+                corpus = n
+                break
+        for n in numbers:
+            if 1000 <= n <= 200000 and n != corpus and (not income or n != income):
+                withdrawal = n
+                break
+        if corpus:
+            withdrawal = withdrawal or round(corpus * 0.02)
+            swp = swp_calculator(corpus, withdrawal, 8, 5)
+            computed.add("swp")
+            status = "⚠️ Corpus EXHAUSTED" if swp.get("corpus_exhausted") else f"Remaining: {fmt_inr(swp['final_value'])}"
+            add("SWP ANALYSIS (Systematic Withdrawal Plan)", (
+                f"Corpus: {fmt_inr(corpus)} | Withdrawal: {fmt_inr(withdrawal)}/mo @8% for 5yr\n"
+                f"Total withdrawn: {fmt_inr(swp['total_withdrawn'])} | {status}"
+            ))
+
+    # ═══════════════════ GRATUITY ═══════════════════
+    if "gratuity" in topics:
+        from tools.financial_calc import gratuity_calculator
+        salary = None
+        years_svc = None
+        for n in numbers:
+            if n >= 10000 and (not income or n != income):
+                salary = n
+                break
+        for n in numbers:
+            if 5 <= n <= 50 and n != salary:
+                years_svc = n
+                break
+        if salary:
+            years_svc = years_svc or 20
+            grat = gratuity_calculator(salary, years_svc)
+            if "error" not in grat:
+                computed.add("gratuity")
+                add("GRATUITY CALCULATION", (
+                    f"Basic + DA: {fmt_inr(salary)}/mo | Service: {grat['years_of_service']}yr\n"
+                    f"Gratuity: {fmt_inr(grat['gratuity_amount'])} (formula: N × B × 15/26)\n"
+                    f"Tax exempt: {fmt_inr(grat['tax_exempt_amount'])} | Taxable: {fmt_inr(grat['taxable_amount'])}"
+                ))
+
+    # ═══════════════════ EPF ═══════════════════
+    if "epf" in topics and "epf" not in computed:
+        from tools.financial_calc import epf_calculator
+        salary = None
+        for n in numbers:
+            if n >= 5000 and (not income or n != income):
+                salary = n
+                break
+        if not salary and income:
+            salary = round(income * 0.5 / 12)  # basic = 50% of CTC
+        salary = salary or 50000
+        age = 30
+        if profile.get("age"):
+            age = int(profile["age"])
+        epf = epf_calculator(salary, age)
+        if "error" not in epf:
+            computed.add("epf")
+            add("EPF ANALYSIS", (
+                f"Basic: {fmt_inr(salary)}/mo | Age: {age} | Rate: {epf['epf_rate']}%\n"
+                f"Your contribution: {fmt_inr(epf['total_employee_contribution'])} | Employer: {fmt_inr(epf['total_employer_contribution'])}\n"
+                f"Interest earned: {fmt_inr(epf['total_interest_earned'])}\n"
+                f"EPF at 58: {fmt_inr(epf['maturity_value'])}"
+            ))
+
+    # ═══════════════════ GST ═══════════════════
+    if "gst" in topics:
+        from tools.financial_calc import gst_calculator
+        amt = None
+        for n in numbers:
+            if n >= 1:
+                amt = n
+                break
+        if amt:
+            rate = 18  # default
+            for r in [5, 12, 18, 28]:
+                if str(r) in query:
+                    rate = r
+                    break
+            gst = gst_calculator(amt, rate)
+            computed.add("gst")
+            add("GST CALCULATION", (
+                f"Amount: {fmt_inr(amt)} | GST rate: {rate}%\n"
+                f"GST: {fmt_inr(gst['gst_amount'])} (CGST: {fmt_inr(gst['cgst'])} + SGST: {fmt_inr(gst['sgst'])})\n"
+                f"Total: {fmt_inr(gst['total_amount'])}"
+            ))
 
     # ═══════════════════ CAPITAL GAINS ═══════════════════
     if "capital_gains" in topics:

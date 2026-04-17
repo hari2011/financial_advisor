@@ -806,6 +806,259 @@
             color: var(--accent);
             border-color: var(--accent);
         }
+
+        /* ── Calculator Panel ── */
+        .calc-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+            z-index: 500;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.15s;
+        }
+        .calc-overlay.active { display: flex; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .calc-panel {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            width: 720px;
+            max-width: 95vw;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+            animation: slideUp 0.2s ease-out;
+        }
+        @keyframes slideUp { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        .calc-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        .calc-header h2 { font-size: 16px; font-weight: 600; }
+        .calc-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: var(--radius-sm);
+            transition: all 0.15s;
+        }
+        .calc-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+        .calc-search {
+            padding: 12px 20px 0;
+        }
+        .calc-search input {
+            width: 100%;
+            padding: 9px 14px 9px 36px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        .calc-search input:focus { border-color: var(--accent); }
+        .calc-search input::placeholder { color: var(--text-muted); }
+        .calc-search-wrap {
+            position: relative;
+        }
+        .calc-search-wrap::before {
+            content: '🔍';
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+            pointer-events: none;
+        }
+
+        .calc-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        /* Calculator grid */
+        .calc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        .calc-card {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 14px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .calc-card:hover {
+            border-color: var(--accent);
+            background: var(--accent-subtle);
+            transform: translateY(-1px);
+        }
+        .calc-card .calc-icon { font-size: 24px; margin-bottom: 6px; }
+        .calc-card .calc-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+        .calc-card .calc-desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+
+        /* Calculator form */
+        .calc-form-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .calc-back {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 6px 10px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.15s;
+        }
+        .calc-back:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+        .calc-form-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .calc-field {
+            margin-bottom: 14px;
+        }
+        .calc-field label {
+            display: block;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        .calc-field-input {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .calc-field input, .calc-field select {
+            flex: 1;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 9px 12px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-family: var(--font);
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        .calc-field input:focus, .calc-field select:focus {
+            border-color: var(--accent);
+        }
+        .calc-field .suffix {
+            font-size: 12px;
+            color: var(--text-muted);
+            min-width: 40px;
+        }
+        .calc-field .field-error {
+            font-size: 11px;
+            color: var(--red);
+            margin-top: 2px;
+        }
+
+        .calc-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+        .calc-submit {
+            flex: 1;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-family: var(--font);
+        }
+        .calc-submit:hover { background: var(--accent-hover); }
+        .calc-ask-ai {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 10px 16px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-family: var(--font);
+        }
+        .calc-ask-ai:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+        /* Calculator results */
+        .calc-results {
+            margin-top: 20px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            animation: slideUp 0.2s ease-out;
+        }
+        .calc-results-header {
+            padding: 12px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .calc-result-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .calc-result-row:last-child { border-bottom: none; }
+        .calc-result-row .label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .calc-result-row .value {
+            font-size: 14px;
+            font-weight: 600;
+            font-family: var(--font-mono);
+        }
+        .calc-result-row .value.currency { color: var(--green); }
+        .calc-result-row .value.pct { color: var(--accent); }
+        .calc-result-row .value.negative { color: var(--red); }
+
+        .calc-error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--red);
+            padding: 10px 14px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            margin-top: 12px;
+        }
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -852,6 +1105,7 @@
         </div>
 
         <div class="sidebar-footer">
+            <button class="btn-clear" onclick="openCalculators()" style="background:var(--accent-subtle); border-color:var(--accent); color:var(--text-primary); font-weight:500;">🧮 Financial Calculators</button>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px;">
                 <button class="btn-clear" onclick="clearChat()">🗑️ Clear Chat</button>
                 <button class="btn-clear" onclick="exportChat()">📥 Export</button>
@@ -868,6 +1122,24 @@
         </div>
     </aside>
 
+    <!-- Calculator Panel -->
+    <div class="calc-overlay" id="calcOverlay" onclick="if(event.target===this)closeCalculators()">
+        <div class="calc-panel">
+            <div class="calc-header">
+                <h2 id="calcTitle">🧮 Financial Calculators</h2>
+                <button class="calc-close" onclick="closeCalculators()" title="Close (Esc)">✕</button>
+            </div>
+            <div class="calc-search" id="calcSearchWrap" style="display:none">
+                <div class="calc-search-wrap">
+                    <input type="text" id="calcSearchInput" placeholder="Search calculators... (e.g. SIP, EMI, NPS, tax)" autocomplete="off">
+                </div>
+            </div>
+            <div class="calc-body" id="calcBody">
+                <div class="calc-grid" id="calcGrid"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Main -->
     <main class="main">
         <div class="chat-area" id="chatArea">
@@ -883,6 +1155,7 @@
                         <button class="quick-btn" onclick="sendQuick('Calculate SIP: ₹10,000/month for 10, 20, 30 years at 12%')">🏖️ SIP returns calculator</button>
                         <button class="quick-btn" onclick="sendQuick('Calculate home loan EMI for ₹40 lakh at 8.5% for 20 years with tax benefits')">🏠 Home loan EMI with tax benefits</button>
                         <button class="quick-btn" onclick="sendQuick('I earn ₹1 lakh/month. Create a detailed budget with savings plan.')">💰 Budget for ₹1L monthly salary</button>
+                        <button class="quick-btn" onclick="openCalculators()" style="border-color:var(--accent); background:var(--accent-subtle);">🧮 Open Financial Calculators</button>
                     </div>
                 </div>
             </div>
@@ -1692,6 +1965,273 @@
                 e.preventDefault();
                 userInput.focus();
                 return;
+            }
+        });
+
+        // ── Calculator Section ──
+        let calcData = null; // cached calculator list
+        let currentCalcId = null;
+
+        async function openCalculators() {
+            const overlay = document.getElementById('calcOverlay');
+            overlay.classList.add('active');
+            document.getElementById('calcTitle').textContent = '🧮 Financial Calculators';
+            if (!calcData) {
+                document.getElementById('calcGrid').innerHTML = '<div style="color:var(--text-muted);padding:20px;">Loading calculators...</div>';
+                try {
+                    const res = await fetch('/api/calculators');
+                    calcData = await res.json();
+                } catch(e) {
+                    document.getElementById('calcGrid').innerHTML = '<div class="calc-error">Failed to load calculators</div>';
+                    return;
+                }
+            }
+            showCalcGrid();
+        }
+
+        function closeCalculators() {
+            document.getElementById('calcOverlay').classList.remove('active');
+            currentCalcId = null;
+        }
+
+        function showCalcGrid(filter = '') {
+            currentCalcId = null;
+            document.getElementById('calcTitle').textContent = '🧮 Financial Calculators';
+            const grid = document.getElementById('calcGrid');
+            grid.style.display = 'grid';
+            const body = document.getElementById('calcBody');
+            body.querySelectorAll('.calc-form-wrapper').forEach(el => el.remove());
+
+            // Show search bar
+            const searchWrap = document.getElementById('calcSearchWrap');
+            searchWrap.style.display = '';
+            const searchInput = document.getElementById('calcSearchInput');
+            if (!searchInput._bound) {
+                searchInput.addEventListener('input', () => renderCalcCards(searchInput.value));
+                searchInput._bound = true;
+            }
+            if (filter) searchInput.value = filter;
+            renderCalcCards(searchInput.value);
+            setTimeout(() => searchInput.focus(), 100);
+        }
+
+        function renderCalcCards(query) {
+            const grid = document.getElementById('calcGrid');
+            const q = (query || '').toLowerCase().trim();
+            const filtered = q ? calcData.filter(c =>
+                c.name.toLowerCase().includes(q) ||
+                c.description.toLowerCase().includes(q) ||
+                c.id.toLowerCase().includes(q)
+            ) : calcData;
+            if (filtered.length === 0) {
+                grid.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;grid-column:1/-1">No calculators match your search</div>';
+                return;
+            }
+            grid.innerHTML = filtered.map(c => `
+                <div class="calc-card" onclick="openCalcForm('${c.id}')">
+                    <div class="calc-icon">${c.icon}</div>
+                    <div class="calc-name">${c.name}</div>
+                    <div class="calc-desc">${c.description}</div>
+                </div>
+            `).join('');
+        }
+
+        function openCalcForm(calcId) {
+            const calc = calcData.find(c => c.id === calcId);
+            if (!calc) return;
+            currentCalcId = calcId;
+            document.getElementById('calcTitle').textContent = `${calc.icon} ${calc.name}`;
+            document.getElementById('calcGrid').style.display = 'none';
+            document.getElementById('calcSearchWrap').style.display = 'none';
+
+            const body = document.getElementById('calcBody');
+            body.querySelectorAll('.calc-form-wrapper').forEach(el => el.remove());
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'calc-form-wrapper';
+
+            // Back button + description
+            wrapper.innerHTML = `
+                <div class="calc-form-header">
+                    <button class="calc-back" onclick="showCalcGrid()">← Back</button>
+                    <span style="font-size:12px;color:var(--text-muted)">${calc.description}</span>
+                </div>
+            `;
+
+            // Form fields
+            const form = document.createElement('div');
+            form.id = 'calcFormFields';
+            calc.fields.forEach(f => {
+                const div = document.createElement('div');
+                div.className = 'calc-field';
+                let inputHtml = '';
+                if (f.type === 'select') {
+                    const opts = f.options.map(o => 
+                        `<option value="${o.value}" ${o.value === f.default ? 'selected' : ''}>${o.label}</option>`
+                    ).join('');
+                    inputHtml = `<select id="calc_${f.id}">${opts}</select>`;
+                } else {
+                    const attrs = [
+                        `type="number"`,
+                        `id="calc_${f.id}"`,
+                        `placeholder="${f.placeholder || ''}"`,
+                        f.min !== undefined ? `min="${f.min}"` : '',
+                        f.max !== undefined ? `max="${f.max}"` : '',
+                        f.default ? `value="${f.default}"` : '',
+                    ].filter(Boolean).join(' ');
+                    inputHtml = `<input ${attrs}>`;
+                }
+                const suffix = f.suffix ? `<span class="suffix">${f.suffix}</span>` : '';
+                div.innerHTML = `
+                    <label>${f.label}${f.required ? ' <span style="color:var(--red)">*</span>' : ''}</label>
+                    <div class="calc-field-input">${inputHtml}${suffix}</div>
+                `;
+                form.appendChild(div);
+            });
+            wrapper.appendChild(form);
+
+            // Action buttons
+            wrapper.innerHTML += `
+                <div class="calc-actions">
+                    <button class="calc-submit" onclick="runCalc('${calcId}')">Calculate</button>
+                    <button class="calc-ask-ai" onclick="askAiCalc('${calcId}')">💬 Ask AI to Explain</button>
+                </div>
+                <div id="calcResult"></div>
+            `;
+
+            body.appendChild(wrapper);
+
+            // Focus first input
+            setTimeout(() => {
+                const firstInput = form.querySelector('input');
+                if (firstInput) firstInput.focus();
+            }, 100);
+
+            // Enter key to submit
+            form.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); runCalc(calcId); }
+            });
+        }
+
+        function getCalcInputs() {
+            const calc = calcData.find(c => c.id === currentCalcId);
+            if (!calc) return null;
+            const inputs = {};
+            for (const f of calc.fields) {
+                const el = document.getElementById(`calc_${f.id}`);
+                if (!el) continue;
+                inputs[f.id] = el.value;
+            }
+            return inputs;
+        }
+
+        async function runCalc(calcId) {
+            const inputs = getCalcInputs();
+            if (!inputs) return;
+            const resultDiv = document.getElementById('calcResult');
+            resultDiv.innerHTML = '<div style="color:var(--text-muted);padding:12px;">Calculating...</div>';
+
+            try {
+                const res = await fetch('/api/calculate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ calculator: calcId, inputs }),
+                });
+                const data = await res.json();
+                if (data.error) {
+                    resultDiv.innerHTML = `<div class="calc-error">${data.error}</div>`;
+                    return;
+                }
+                renderCalcResult(data, resultDiv);
+            } catch(e) {
+                resultDiv.innerHTML = `<div class="calc-error">Calculation failed: ${e.message}</div>`;
+            }
+        }
+
+        function renderCalcResult(data, container) {
+            let rows = '';
+            if (data.format && data.format.length > 0) {
+                for (const f of data.format) {
+                    let val = getNestedValue(data.result, f.key);
+                    if (val === undefined || val === null) continue;
+                    let cls = '';
+                    let displayVal = val;
+                    if (f.fmt === 'currency') {
+                        cls = 'currency';
+                        const num = Number(val);
+                        if (num < 0) cls += ' negative';
+                        displayVal = formatINR(Math.abs(num));
+                        if (num < 0) displayVal = '−₹' + displayVal.replace('₹','');
+                    } else if (f.fmt === 'pct') {
+                        cls = 'pct';
+                        displayVal = Number(val).toFixed(2) + '%';
+                    } else if (f.fmt === 'number') {
+                        displayVal = Number(val).toLocaleString('en-IN');
+                    } else {
+                        displayVal = String(val);
+                    }
+                    rows += `<div class="calc-result-row">
+                        <span class="label">${f.label}</span>
+                        <span class="value ${cls}">${displayVal}</span>
+                    </div>`;
+                }
+            } else {
+                // Fallback: render all keys from result
+                for (const [k, v] of Object.entries(data.result)) {
+                    if (typeof v === 'object') continue;
+                    rows += `<div class="calc-result-row">
+                        <span class="label">${k.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase())}</span>
+                        <span class="value">${typeof v === 'number' ? v.toLocaleString('en-IN') : v}</span>
+                    </div>`;
+                }
+            }
+            container.innerHTML = `
+                <div class="calc-results">
+                    <div class="calc-results-header">${data.icon || '📊'} ${data.name || 'Result'}</div>
+                    ${rows}
+                </div>
+            `;
+        }
+
+        function getNestedValue(obj, path) {
+            return path.split('.').reduce((o, k) => (o && o[k] !== undefined) ? o[k] : undefined, obj);
+        }
+
+        function formatINR(num) {
+            if (num >= 10000000) return '₹' + (num / 10000000).toFixed(2) + ' Cr';
+            if (num >= 100000) return '₹' + (num / 100000).toFixed(2) + ' L';
+            return '₹' + Number(num).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+        }
+
+        function askAiCalc(calcId) {
+            const calc = calcData.find(c => c.id === calcId);
+            if (!calc) return;
+            const inputs = getCalcInputs();
+            if (!inputs) return;
+
+            // Build a natural-language query from the calculator inputs
+            let parts = [];
+            for (const f of calc.fields) {
+                const val = inputs[f.id];
+                if (!val || val === '') continue;
+                if (f.type === 'select') {
+                    const opt = f.options.find(o => o.value === val);
+                    parts.push(`${f.label}: ${opt ? opt.label : val}`);
+                } else {
+                    parts.push(`${f.label}: ${val}${f.suffix ? ' ' + f.suffix : ''}`);
+                }
+            }
+            const query = `${calc.name}: ${parts.join(', ')}. Calculate and explain the result in detail with advice.`;
+
+            closeCalculators();
+            userInput.value = query;
+            sendMessage();
+        }
+
+        // Esc key to close calculator panel
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && document.getElementById('calcOverlay').classList.contains('active')) {
+                closeCalculators();
             }
         });
 

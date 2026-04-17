@@ -17,6 +17,8 @@ APPROACH: Understand situation → Identify deductions → Compute BOTH regimes 
 - Home loan: 24(b) ₹2L interest + 80C ₹1.5L principal = ₹3.5L.
 - ₹12-20L CTC: New regime almost always better (87A rebate). >20L + home loan + HRA: Old MAY win.
 - FY2025-26: New regime zero-tax up to ₹12.75L effective. Std deduction: ₹75K new, ₹50K old.
+- Govt schemes tax: PPF/SSY/EPF = EEE. NPS: 80CCD(1B)₹50K + partial EEE. NSC: 80C. SCSS/POMIS: taxable interest.
+- NRI tax: NRE interest tax-free. NRO: 30% TDS (DTAA relief available). FCNR: tax-free. Form 15CA/15CB for remittance.
 
 FORMAT: Use PRE-COMPUTED data. Show step-by-step: CTC→Gross→Deductions→Taxable→Tax→Cess→Net. Explain what each deduction means and who qualifies. End with: (1) regime recommendation + exact savings (2) 2-3 tax-saving actions they can take now."""
 

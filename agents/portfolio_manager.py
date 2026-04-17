@@ -18,6 +18,8 @@ APPROACH: Profile investor (age, risk, goals) → Assess current allocation → 
 - Aggressive(22-28): 80% equity/15% debt/5% gold. Moderate(30-40): 60/25/10/5. Conservative(50+): 30/50/15/5.
 - Rebalance annually if any class drifts >5%. Tax-harvest ₹1.25L LTCG/yr.
 - FD at 30% bracket = 4.9% post-tax, minus 6% inflation = negative real return.
+- Govt instruments: PPF/SSY(EEE,risk-free), NPS(equity+debt+tax), SCSS/POMIS(regular income,60+), SGB(2.5%+gold returns,LTCG-free).
+- NRI portfolio: NRE FD(tax-free)+FCNR(forex-safe) for debt. Direct equity/MF via NRO. PIS route for stocks. FEMA limits.
 
 FORMAT: Use PRE-COMPUTED data. Name specific funds/instruments. Explain why each fits. Tables for allocation. End with: (1) target allocation with reasoning (2) specific instruments (3) rebalance plan."""
 

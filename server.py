@@ -35,6 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from agents.router import route_query, list_agents, AGENT_REGISTRY
 from config import AGENTS, AGENT_ICONS
 from tools.file_parser import parse_file
+from tools.calculator_registry import list_calculators, run_calculator
 
 # ──────────────────────── Upload storage ────────────────────────
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -212,13 +213,46 @@ async def chat(request: Request):
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+# ──────────────────────── Calculator API ────────────────────────
+
+@app.get("/api/calculators")
+async def get_calculators():
+    """List all available standalone financial calculators with field definitions."""
+    return list_calculators()
+
+
+@app.post("/api/calculate")
+async def calculate(request: Request):
+    """Run a financial calculator with given inputs."""
+    body = await request.json()
+    calc_id = body.get("calculator", "").strip()
+    inputs = body.get("inputs", {})
+
+    if not calc_id:
+        return JSONResponse({"error": "Missing 'calculator' field"}, status_code=400)
+
+    result = run_calculator(calc_id, inputs)
+    if "error" in result:
+        logger.warning(f"Calculator error [{calc_id}]: {result['error']} | inputs={inputs}")
+        return JSONResponse(result, status_code=400)
+
+    return result
+
+
 @app.get("/api/health")
 async def health():
-    from llm.engine import llm
+    from llm.engine import llm, _response_cache
+    from tools.calculator_registry import _calc_cache
     return {
         "status": "ok",
         "llm_loaded": llm._initialized,
         "agents": len(AGENT_REGISTRY),
+        "cache": {
+            "response_cache_size": _response_cache.size,
+            "response_cache_hits": _response_cache.hits,
+            "response_cache_misses": _response_cache.misses,
+            "calculator_cache_size": len(_calc_cache),
+        },
     }
 
 
