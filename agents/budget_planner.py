@@ -8,15 +8,39 @@ class BudgetPlannerAgent(BaseAgent):
     icon = "💰"
     description = "Budgeting in ₹, expense tracking, savings goals, emergency fund, financial health"
 
-    system_prompt = """Certified Financial Planner for Indian households. Give specific ₹ amounts — not just percentages — so the user has a ready-to-use budget.
+    system_prompt = """Certified Financial Planner specializing in Indian household budgets. You MUST provide specific ₹ amounts for EVERY expense category — never just percentages.
 
-APPROACH: Take-home(not CTC) → Life stage → Fixed commitments → Choose framework → Specific ₹ budget.
-- Frameworks: 50/30/20 (balanced), 60/20/20 (high-cost city), 40/20/40 (aggressive saver), 70/10/20 (low income).
-- Emergency fund = 6mo expenses. EPF already saves ~12% Basic for retirement. Insurance is non-negotiable.
-- Step-up SIP +10%/yr with hikes. Even ₹5K/mo = ₹1Cr+ in 25yr @12%.
-- Budget from TAKE-HOME only. Debt stress → payoff first.
+APPROACH: Take-home (not CTC) → Family size & city tier → Fixed commitments → Itemized expense budget → Savings allocation.
 
-FORMAT: Use PRE-COMPUTED data. Budget table with specific ₹ amounts per category. Explain why each allocation matters. End with: (1) recommended framework for their situation (2) monthly budget breakdown (3) one quick win they can start today."""
+MANDATORY EXPENSE CATEGORIES (always include ALL):
+  1. Rent / Home loan EMI
+  2. Groceries & kitchen (milk, vegetables, provisions, cooking gas)
+  3. Utilities (electricity, water, internet, mobile recharge, DTH/OTT)
+  4. Domestic help (maid, cook — standard in Indian middle-class households)
+  5. Children's education (school fees, books, coaching/tuition, transport)
+  6. Transport (fuel, car EMI, metro/bus, auto/cab)
+  7. Food outside (dining, Zomato/Swiggy, office lunch)
+  8. Health & medical (insurance premium, OPD, medicines, gym)
+  9. Insurance (term life, health, vehicle)
+  10. Personal & grooming (clothing, salon, personal care)
+  11. Family support (parents' expenses, siblings — very common in India)
+  12. Social & festivals (Diwali, weddings, gifts, religious donations)
+  13. Entertainment & lifestyle (movies, outings, hobbies, travel fund)
+  14. Miscellaneous / buffer (5% of take-home)
+
+INDIAN FAMILY FINANCE RULES:
+- Family support (parents/siblings) is NOT optional for most Indians — budget for it explicitly.
+- Festivals cost ₹50K-1.5L/yr — budget monthly, not as surprises.
+- Domestic help enables dual-income families — it's a necessity, not luxury.
+- Education is India's #1 priority — school + coaching can be 15-25% of take-home.
+- Insurance before investing: term life ₹1Cr + health ₹5L family floater = non-negotiable.
+- Gold buying (₹2K-10K/mo) — use Sovereign Gold Bonds, not physical gold.
+
+FRAMEWORKS: 50/30/20 (balanced), 60/20/20 (high-cost city), 40/20/40 (aggressive saver), 70/10/20 (low income).
+Emergency fund = 6mo expenses. EPF already saves 12% Basic for retirement.
+Step-up SIP +10%/yr with hikes. Even ₹5K/mo = ₹1Cr+ in 25yr @12%.
+
+FORMAT: Use PRE-COMPUTED data. Create an itemized budget TABLE with specific ₹ amounts for EVERY category above. Show total expenses, total savings, and savings rate. End with: (1) recommended framework (2) one actionable quick win (3) areas where they may be over/under-spending vs typical Indian household."""
 
     def gather_context(self, query: str) -> str:
         context_parts = []
@@ -84,6 +108,92 @@ FORMAT: Use PRE-COMPUTED data. Budget table with specific ₹ amounts per catego
                 f"\nEMERGENCY FUND TARGET: {fmt_inr(ef['emergency_fund_amount'])} "
                 f"(estimated {fmt_inr(est_expenses)}/mo expenses × 6 months)"
             )
+
+            # ── Itemized Indian household expense estimation ──
+            has_kids = any(w in query_lower for w in ["child", "kid", "son", "daughter",
+                                                       "school", "children", "family of"])
+            is_family = has_kids or any(w in query_lower for w in ["married", "wife", "husband",
+                                                                    "spouse", "family", "couple"])
+            is_metro = any(w in query_lower for w in ["mumbai", "delhi", "bangalore", "bengaluru",
+                                                       "hyderabad", "chennai", "pune", "kolkata",
+                                                       "metro", "tier 1", "tier-1"])
+            is_tier2 = any(w in query_lower for w in ["tier 2", "tier-2", "tier 3", "small city",
+                                                       "jaipur", "lucknow", "indore", "bhopal",
+                                                       "chandigarh", "coimbatore", "kochi",
+                                                       "nagpur", "patna", "ahmedabad"])
+
+            city_factor = 0.7 if is_tier2 else 1.0  # Tier-2 costs ~70% of metro
+
+            if is_family and has_kids:
+                # Family with children
+                expense_profile = {
+                    "Rent / Home EMI": round(disposable * 0.22 * city_factor),
+                    "Groceries & kitchen": round(min(disposable * 0.10, 18000) * city_factor),
+                    "Utilities (elec/water/internet/mobile)": round(min(disposable * 0.04, 7000) * city_factor),
+                    "Domestic help (maid/cook)": round(min(disposable * 0.05, 10000) * city_factor),
+                    "Children education (fees/coaching/books)": round(min(disposable * 0.14, 30000)),
+                    "Transport (fuel/EMI/commute)": round(min(disposable * 0.06, 12000) * city_factor),
+                    "Food outside (dining/delivery)": round(min(disposable * 0.03, 6000)),
+                    "Health & medical (insurance/OPD/gym)": round(min(disposable * 0.04, 8000)),
+                    "Insurance (term life/health/vehicle)": round(min(disposable * 0.03, 5000)),
+                    "Personal & grooming (clothing/salon)": round(min(disposable * 0.03, 6000)),
+                    "Family support (parents/siblings)": round(disposable * 0.06),
+                    "Social & festivals (gifts/weddings)": round(min(disposable * 0.05, 10000)),
+                    "Entertainment (movies/travel fund)": round(min(disposable * 0.03, 5000)),
+                    "Miscellaneous / buffer": round(disposable * 0.04),
+                }
+                profile_label = f"Family with children ({'Tier-2' if is_tier2 else 'Metro'})"
+            elif is_family:
+                # Couple without children
+                expense_profile = {
+                    "Rent / Home EMI": round(disposable * 0.20 * city_factor),
+                    "Groceries & kitchen": round(min(disposable * 0.08, 12000) * city_factor),
+                    "Utilities (elec/water/internet/mobile)": round(min(disposable * 0.04, 6000) * city_factor),
+                    "Domestic help (maid/cook)": round(min(disposable * 0.04, 6000) * city_factor),
+                    "Transport (fuel/EMI/commute)": round(min(disposable * 0.05, 8000) * city_factor),
+                    "Food outside (dining/delivery)": round(min(disposable * 0.05, 8000)),
+                    "Health & medical (insurance/OPD/gym)": round(min(disposable * 0.04, 7000)),
+                    "Insurance (term life/health/vehicle)": round(min(disposable * 0.03, 4000)),
+                    "Personal & grooming (clothing/salon)": round(min(disposable * 0.04, 7000)),
+                    "Family support (parents/siblings)": round(disposable * 0.06),
+                    "Social & festivals (gifts/weddings)": round(min(disposable * 0.05, 8000)),
+                    "Entertainment (movies/travel fund)": round(min(disposable * 0.04, 6000)),
+                    "Miscellaneous / buffer": round(disposable * 0.04),
+                }
+                profile_label = f"Couple ({'Tier-2' if is_tier2 else 'Metro'})"
+            else:
+                # Single person
+                expense_profile = {
+                    "Rent / PG / Home EMI": round(disposable * 0.25 * city_factor),
+                    "Groceries & kitchen": round(min(disposable * 0.07, 8000) * city_factor),
+                    "Utilities (elec/water/internet/mobile)": round(min(disposable * 0.04, 4000) * city_factor),
+                    "Transport (fuel/metro/cab)": round(min(disposable * 0.05, 5000) * city_factor),
+                    "Food outside (dining/Swiggy/office)": round(min(disposable * 0.07, 8000)),
+                    "Health & medical (insurance/OPD/gym)": round(min(disposable * 0.03, 5000)),
+                    "Insurance (term life/health)": round(min(disposable * 0.02, 3000)),
+                    "Personal & grooming (clothing/salon)": round(min(disposable * 0.04, 5000)),
+                    "Family support (parents/siblings)": round(disposable * 0.08),
+                    "Social & festivals (gifts/weddings)": round(min(disposable * 0.04, 5000)),
+                    "Entertainment (movies/travel fund)": round(min(disposable * 0.05, 6000)),
+                    "Miscellaneous / buffer": round(disposable * 0.04),
+                }
+                profile_label = f"Single ({'Tier-2' if is_tier2 else 'Metro'})"
+
+            total_expenses = sum(expense_profile.values())
+            remaining_savings = round(disposable - total_expenses)
+            savings_rate = round(remaining_savings / disposable * 100, 1) if disposable > 0 else 0
+
+            expense_lines = [f"\nITEMIZED MONTHLY EXPENSE ESTIMATE ({profile_label}):"]
+            for cat, amt in expense_profile.items():
+                pct = round(amt / disposable * 100, 1) if disposable > 0 else 0
+                expense_lines.append(f"  {cat}: {fmt_inr(amt)} ({pct}%)")
+            expense_lines.append(f"  ─────────────────────────────")
+            expense_lines.append(f"  TOTAL ESTIMATED EXPENSES: {fmt_inr(total_expenses)}")
+            expense_lines.append(f"  AVAILABLE FOR SAVINGS/INVESTMENT: {fmt_inr(remaining_savings)} ({savings_rate}%)")
+            expense_lines.append(f"\n  NOTE: These are realistic benchmarks for Indian households.")
+            expense_lines.append(f"  Adjust based on actual lifestyle. Family support & festival costs are")
+            expense_lines.append(f"  commonly underestimated — budget for them explicitly.")
+            context_parts.append("\n".join(expense_lines))
 
             # SIP projections for reference at different saving rates
             for save_pct in [15, 20, 30]:

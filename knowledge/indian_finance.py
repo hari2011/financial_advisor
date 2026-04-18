@@ -425,6 +425,152 @@ INDIAN COST BENCHMARKS (Metro, 2025):
   Health insurance: ₹15-25K/yr | Term insurance: ₹10-20K/yr
 """
 
+# ──────── INDIAN HOUSEHOLD EXPENSES ────────
+SECTIONS["indian_household_expenses"] = """
+INDIAN HOUSEHOLD MONTHLY EXPENSE GUIDE (2025):
+
+A realistic budget MUST account for these routine expenses. Indian family finances
+revolve around joint family obligations, education costs, domestic help, and
+festival/social commitments that Western budgeting frameworks don't capture.
+
+══ EXPENSE CATEGORIES WITH REALISTIC ₹ RANGES ══
+
+1. HOUSING
+   Metro 1BHK: ₹15,000-30,000 | Metro 2BHK: ₹25,000-50,000
+   Tier-2 city: 40-60% of metro rent
+   Owned home: ₹3,000-8,000/mo (maintenance + property tax + repairs)
+   Society maintenance: ₹2,000-6,000/mo (metro apartments)
+
+2. GROCERIES & KITCHEN
+   Single person: ₹5,000-8,000 | Couple: ₹8,000-12,000
+   Family of 3-4: ₹12,000-18,000 | Joint family (5-6): ₹18,000-25,000
+   Includes: vegetables, fruits, milk (₹2,500-4,000), atta/rice/dal, oil, spices
+   Cooking gas (LPG): ₹900-1,000/cylinder, ~1.5 cylinders/mo for family
+
+3. UTILITIES & BILLS
+   Electricity: ₹1,500-4,000 (varies by AC usage / city)
+   Water: ₹200-800 (municipal) or ₹1,500-3,000 (tanker areas)
+   Internet/broadband: ₹700-1,500
+   Mobile recharge: ₹250-500 per person (₹500-1,500 for family)
+   DTH/OTT subscriptions: ₹500-1,500 (Netflix/Hotstar/Prime)
+   Total utilities: ₹3,500-8,000/mo for a family
+
+4. DOMESTIC HELP (very common in Indian households)
+   Maid (cooking + cleaning): ₹4,000-10,000/mo depending on city
+   Part-time maid (2 hrs/day): ₹3,000-6,000/mo
+   Cook only: ₹5,000-12,000/mo
+   Driver: ₹12,000-18,000/mo (metros)
+   Many middle-class families spend ₹5,000-15,000/mo on domestic help
+
+5. CHILDREN'S EDUCATION (major Indian household expense)
+   Pre-school/daycare: ₹5,000-15,000/mo
+   School (affordable private): ₹3,000-8,000/mo (₹36K-1L/yr fees)
+   School (premium private): ₹8,000-25,000/mo (₹1L-3L/yr fees)
+   School bus/transport: ₹2,000-5,000/mo
+   Tuition/coaching: ₹3,000-10,000/mo per child
+   Books, uniform, supplies: ₹5,000-15,000/yr (₹500-1,500/mo averaged)
+   Total per child: ₹8,000-30,000/mo depending on school tier
+
+6. TRANSPORT
+   Two-wheeler fuel: ₹1,500-3,000/mo
+   Car fuel (petrol): ₹5,000-10,000/mo
+   Car EMI (if any): ₹8,000-25,000/mo
+   Public transport (metro/bus): ₹1,500-3,500/mo
+   Auto/cab (Ola/Uber): ₹3,000-8,000/mo
+   Car insurance + maintenance: ₹15,000-30,000/yr (₹1,500-2,500/mo averaged)
+
+7. FOOD OUTSIDE HOME (dining + ordering)
+   Moderate: ₹3,000-6,000/mo (weekend dining + occasional Zomato/Swiggy)
+   Active social life: ₹6,000-12,000/mo
+   Office lunch (if not provided): ₹3,000-5,000/mo
+
+8. HEALTH & MEDICAL
+   Health insurance premium: ₹1,200-2,500/mo (₹15-30K/yr for family floater)
+   OPD/medicines/routine: ₹1,000-3,000/mo
+   Gym/fitness: ₹1,000-4,000/mo
+   Total: ₹3,000-8,000/mo
+
+9. INSURANCE (non-negotiable)
+   Term life insurance: ₹800-1,500/mo (₹10-18K/yr for ₹1Cr cover, age 30)
+   Health insurance: included above
+   Vehicle insurance: ₹5,000-15,000/yr (₹500-1,500/mo)
+
+10. PERSONAL & GROOMING
+    Clothing: ₹2,000-5,000/mo (averaged, includes seasonal shopping)
+    Salon/grooming: ₹500-2,000/mo
+    Personal care products: ₹500-1,500/mo
+
+11. SOCIAL & FAMILY OBLIGATIONS (uniquely Indian)
+    Festival expenses: ₹3,000-10,000/mo averaged (Diwali, Holi, Eid, Pongal, etc.)
+    Wedding gifts/attendance: ₹2,000-5,000/mo averaged (Indian wedding season)
+    Family support (parents/siblings): ₹5,000-20,000/mo (very common)
+    Religious/charity (donations, temple): ₹500-2,000/mo
+    Total social: ₹5,000-15,000/mo — often overlooked in budgets
+
+12. ENTERTAINMENT & LIFESTYLE
+    OTT + subscriptions: ₹500-1,500/mo
+    Movies/outings: ₹1,000-3,000/mo
+    Hobbies/sports: ₹500-2,000/mo
+    Vacation travel: ₹5,000-15,000/mo averaged (1-2 trips/yr)
+
+══ TYPICAL MONTHLY EXPENSE PROFILES ══
+
+SINGLE (Metro, ₹60-80K take-home):
+  Rent: ₹15,000 | Groceries: ₹5,000 | Utilities: ₹3,000
+  Transport: ₹3,000 | Food out: ₹4,000 | Personal: ₹3,000
+  Insurance: ₹1,500 | Entertainment: ₹3,000 | Social: ₹3,000
+  TOTAL EXPENSES: ~₹40,000-45,000 → Save ₹20-35K
+
+COUPLE (Metro, ₹1.2-1.5L combined take-home):
+  Rent: ₹25,000 | Groceries: ₹10,000 | Utilities: ₹5,000
+  Domestic help: ₹5,000 | Transport: ₹6,000 | Food out: ₹6,000
+  Insurance: ₹3,000 | Personal: ₹5,000 | Entertainment: ₹4,000
+  Social/family: ₹5,000
+  TOTAL EXPENSES: ~₹74,000-80,000 → Save ₹40-70K
+
+FAMILY OF 4 (Metro, ₹1.5-2L take-home):
+  Rent/EMI: ₹35,000 | Groceries: ₹15,000 | Utilities: ₹6,000
+  Domestic help: ₹8,000 | Children education (×2): ₹20,000
+  Transport: ₹8,000 | Food out: ₹5,000 | Medical: ₹4,000
+  Insurance: ₹4,000 | Personal: ₹5,000 | Social/family: ₹8,000
+  Entertainment: ₹3,000 | Misc/buffer: ₹4,000
+  TOTAL EXPENSES: ~₹1,25,000-1,40,000 → Save ₹30-60K
+
+FAMILY (Tier-2 City, ₹80K-1.2L take-home):
+  Rent/EMI: ₹15,000 | Groceries: ₹12,000 | Utilities: ₹4,000
+  Domestic help: ₹4,000 | Children education: ₹10,000
+  Transport: ₹5,000 | Food out: ₹3,000 | Medical: ₹3,000
+  Insurance: ₹3,000 | Personal: ₹3,000 | Social/family: ₹5,000
+  Entertainment: ₹2,000 | Misc: ₹3,000
+  TOTAL EXPENSES: ~₹72,000-85,000 → Save ₹15-35K
+
+══ CRITICAL INDIAN BUDGETING RULES ══
+
+1. FAMILY SUPPORT IS NOT OPTIONAL: 40-60% of Indian earners send money to
+   parents or support siblings. Budget ₹5,000-20,000/mo for this.
+
+2. FESTIVALS ARE RECURRING: Average Indian family spends ₹50,000-1,50,000/yr
+   on festivals. Budget ₹5,000-12,000/mo averaged, not as "surprise" expenses.
+
+3. WEDDINGS DRAIN SAVINGS: Wedding season (Nov-Feb, Apr-Jun) costs ₹5,000-15,000
+   per month in gifts, travel, outfits. Budget for it.
+
+4. EDUCATION IS THE #1 PRIORITY: Indian parents prioritize children's education
+   above their own retirement. School + coaching can be 15-25% of take-home.
+
+5. GOLD IS CULTURAL: Many families buy gold monthly (₹2,000-10,000/mo) for
+   weddings/future. Treat as savings, not expense. Consider Sovereign Gold Bonds.
+
+6. INSURANCE BEFORE INVESTING: Term life (₹1Cr cover = ₹800-1,200/mo at age 30)
+   + health insurance (₹5L family floater = ₹1,000-2,000/mo) are non-negotiable.
+
+7. INFLATION HITS HARD: Indian food inflation runs 6-8%. Budget ₹ amounts should
+   increase 8-10% annually, not just match CPI.
+
+8. DOMESTIC HELP IS A NECESSITY: In dual-income families, maid + cook costs
+   ₹6,000-15,000/mo. This is not a luxury — it's what enables both partners to work.
+"""
+
 # ──────── CRYPTO TAX ────────
 SECTIONS["crypto_tax_india"] = """
 CRYPTOCURRENCY TAX & RULES (India):
@@ -879,6 +1025,15 @@ TOPIC_KEYWORDS = {
         "financial plan", "spending", "monthly plan", "how to save",
         "allocat", "split", "manage money", "plan my", "afford",
     ],
+    "indian_household_expenses": [
+        "household", "monthly expense", "routine expense", "rent", "groceries",
+        "domestic help", "maid", "school fees", "education cost", "festival",
+        "family support", "parents", "wedding", "cooking gas", "electricity bill",
+        "utility", "dining out", "swiggy", "zomato", "subscription",
+        "children", "child", "family of", "expense breakdown", "itemize",
+        "how much should i spend", "where does money go", "living cost",
+        "cost of living", "indian family", "middle class",
+    ],
     "crypto_tax_india": [
         "crypto", "bitcoin", "ethereum", "vda", "30% tax", "tds crypto",
     ],
@@ -945,7 +1100,8 @@ RELATED_TOPICS = {
     "stock_market_india": ["capital_gains_tax"],
     "capital_gains_tax": ["stock_market_india", "tax_new_regime"],
     "loan_strategies": ["loan_rules", "financial_formulas"],
-    "budget_planning": ["worked_examples"],
+    "budget_planning": ["worked_examples", "indian_household_expenses"],
+    "indian_household_expenses": ["budget_planning", "insurance_guidelines"],
     "govt_schemes": ["investment_vehicles", "tax_deductions_detail"],
     "banking_accounts": ["govt_policies"],
     "govt_policies": ["govt_schemes", "banking_accounts"],
