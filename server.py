@@ -60,9 +60,15 @@ async def _init_session_db():
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL,
                 message_count INTEGER NOT NULL DEFAULT 0,
-                saved INTEGER NOT NULL DEFAULT 1
+                saved INTEGER NOT NULL DEFAULT 1,
+                pinned INTEGER NOT NULL DEFAULT 0
             )
         """)
+        # Add pinned column to existing DBs (safe to run multiple times)
+        try:
+            await db.execute("ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass  # Column already exists
         await db.execute("""
             CREATE TABLE IF NOT EXISTS session_files (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,6 +104,27 @@ async def _upsert_session(session_id: str, title: str = None, msg_count_delta: i
                 (session_id, title or "New conversation", now, now, max(msg_count_delta, 0))
             )
         await db.commit()
+
+
+MAX_UNPINNED_SESSIONS = 5  # Keep only this many unpinned sessions
+
+
+async def _purge_old_sessions(keep: int = MAX_UNPINNED_SESSIONS):
+    """Delete oldest unpinned sessions beyond the keep limit.
+    Pinned sessions are never purged."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        # Get unpinned sessions ordered by most recent, skip the first `keep`
+        rows = await db.execute_fetchall(
+            "SELECT session_id FROM sessions WHERE pinned = 0 ORDER BY updated_at DESC LIMIT -1 OFFSET ?",
+            (keep,)
+        )
+        if rows:
+            ids_to_delete = [r[0] for r in rows]
+            placeholders = ",".join("?" * len(ids_to_delete))
+            await db.execute(f"DELETE FROM session_files WHERE session_id IN ({placeholders})", ids_to_delete)
+            await db.execute(f"DELETE FROM sessions WHERE session_id IN ({placeholders})", ids_to_delete)
+            await db.commit()
+            logger.info(f"Purged {len(ids_to_delete)} old sessions")
 
 
 async def _save_session_files(session_id: str, files: list[dict]):
@@ -318,6 +345,8 @@ async def chat(request: Request):
             # Persist uploaded files to DB
             if session_files:
                 await _save_session_files(session_id, session_files)
+            # Auto-purge old unpinned sessions beyond limit
+            await _purge_old_sessions()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -385,8 +414,8 @@ async def list_sessions():
     """List all saved conversation sessions, most recent first."""
     async with aiosqlite.connect(DB_PATH) as db:
         rows = await db.execute_fetchall(
-            "SELECT session_id, title, created_at, updated_at, message_count "
-            "FROM sessions WHERE saved = 1 ORDER BY updated_at DESC LIMIT 50"
+            "SELECT session_id, title, created_at, updated_at, message_count, pinned "
+            "FROM sessions WHERE saved = 1 ORDER BY pinned DESC, updated_at DESC LIMIT 50"
         )
     return [
         {
@@ -395,6 +424,7 @@ async def list_sessions():
             "created_at": r[2],
             "updated_at": r[3],
             "message_count": r[4],
+            "pinned": bool(r[5]),
         }
         for r in rows
     ]
@@ -426,21 +456,27 @@ async def get_session(session_id: str, request: Request):
 
 
 @app.patch("/api/sessions/{session_id}")
-async def rename_session(session_id: str, request: Request):
-    """Rename a conversation session."""
+async def update_session(session_id: str, request: Request):
+    """Update a conversation session (rename or pin/unpin)."""
     body = await request.json()
-    new_title = body.get("title", "").strip()
-    if not new_title:
-        return JSONResponse({"error": "Title cannot be empty"}, status_code=400)
-    # Sanitize title
-    new_title = new_title[:100]
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE sessions SET title = ?, updated_at = ? WHERE session_id = ?",
-            (new_title, time.time(), session_id)
-        )
+        if "title" in body:
+            new_title = body["title"].strip()[:100]
+            if not new_title:
+                return JSONResponse({"error": "Title cannot be empty"}, status_code=400)
+            await db.execute(
+                "UPDATE sessions SET title = ?, updated_at = ? WHERE session_id = ?",
+                (new_title, time.time(), session_id)
+            )
+        if "pinned" in body:
+            pinned = 1 if body["pinned"] else 0
+            await db.execute(
+                "UPDATE sessions SET pinned = ? WHERE session_id = ?",
+                (pinned, session_id)
+            )
+            logger.info(f"Session {session_id} {'pinned' if pinned else 'unpinned'}")
         await db.commit()
-    return {"status": "ok", "title": new_title}
+    return {"status": "ok"}
 
 
 # ──────────────────────── Main ────────────────────────

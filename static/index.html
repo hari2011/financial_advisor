@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FinanceGPT — AI Financial Advisor</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💹</text></svg>">
+    <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
     <style>
         /* ── Reset & Variables ── */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -78,84 +78,32 @@
             flex-direction: column;
             height: 100vh;
             overflow: hidden;
+            transition: margin-left 0.25s ease, opacity 0.2s;
         }
-
-        .sidebar-header {
-            padding: 20px;
-            border-bottom: 1px solid var(--border);
-        }
-        .sidebar-header h1 {
-            font-size: 20px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .sidebar-header p {
-            color: var(--text-muted);
-            font-size: 12px;
-            margin-top: 4px;
+        .sidebar.collapsed {
+            margin-left: calc(-1 * var(--sidebar-w));
+            opacity: 0;
+            pointer-events: none;
         }
 
         .sidebar-section {
-            padding: 16px 20px 8px;
+            padding: 14px 16px 6px;
         }
         .sidebar-section h3 {
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.08em;
             color: var(--text-muted);
-            margin-bottom: 8px;
-        }
-
-        .agent-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 0 12px 12px;
-        }
-        .agent-list::-webkit-scrollbar { width: 4px; }
-        .agent-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-
-        .agent-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 12px;
-            border-radius: var(--radius-sm);
-            cursor: pointer;
-            transition: all 0.15s;
-            border: 1px solid transparent;
-            margin-bottom: 2px;
-        }
-        .agent-item:hover { background: var(--bg-hover); }
-        .agent-item.active {
-            background: var(--accent-subtle);
-            border-color: var(--accent);
-        }
-        .agent-item .icon { font-size: 18px; flex-shrink: 0; }
-        .agent-item .info { min-width: 0; }
-        .agent-item .name {
-            font-size: 13px;
-            font-weight: 500;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .agent-item .desc {
-            font-size: 11px;
-            color: var(--text-muted);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            margin-bottom: 6px;
         }
 
         .sidebar-footer {
-            padding: 16px 20px;
+            padding: 12px 16px;
             border-top: 1px solid var(--border);
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 6px;
         }
         .sidebar-footer .status {
             display: flex;
@@ -235,6 +183,18 @@
         }
         .session-item:hover .session-delete { opacity: 1; }
         .session-item .session-delete:hover { color: var(--red); }
+        .session-item .session-pin {
+            opacity: 0;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 12px;
+            padding: 0 2px;
+            transition: opacity 0.15s;
+            flex-shrink: 0;
+        }
+        .session-item:hover .session-pin { opacity: 1; }
+        .session-item .session-pin.pinned { opacity: 1; color: var(--accent); }
+        .session-item .session-pin:hover { color: var(--accent-hover); }
         .session-empty {
             font-size: 11px;
             color: var(--text-muted);
@@ -250,6 +210,247 @@
             font-size: 12px;
             color: var(--text-secondary);
             padding: 4px 0;
+        }
+        .info-btn {
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 11px;
+            line-height: 16px;
+            text-align: center;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 0;
+            margin-left: 6px;
+            flex-shrink: 0;
+        }
+        .info-btn:hover {
+            background: var(--accent-subtle);
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+        .info-popover {
+            display: none;
+            position: fixed;
+            width: 250px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 11px;
+            line-height: 1.5;
+            color: var(--text-primary);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+            z-index: 9999;
+            text-align: left;
+        }
+        .info-popover.show { display: block; }
+        .info-popover strong { color: var(--accent); }
+        .info-popover ul {
+            margin: 4px 0 0 0;
+            padding-left: 16px;
+        }
+        .info-popover li { margin-bottom: 2px; }
+
+        /* ── Top header bar ── */
+        .top-header {
+            display: flex;
+            align-items: center;
+            height: 48px;
+            padding: 0 16px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-primary);
+            flex-shrink: 0;
+            gap: 12px;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .sidebar-toggle {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 6px;
+            border-radius: 6px;
+            font-size: 18px;
+            line-height: 1;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .sidebar-toggle:hover { background: var(--bg-hover); color: var(--text-primary); }
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 700;
+            font-size: 15px;
+            white-space: nowrap;
+        }
+        .header-brand .brand-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--accent);
+        }
+        .header-center {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .header-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-family: var(--font);
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .header-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--border-light); }
+        .theme-icon-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 6px;
+            border-radius: 8px;
+            font-size: 18px;
+            line-height: 1;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .theme-icon-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            transform: rotate(15deg);
+        }
+
+        /* -- Agent dropdown (header) -- */
+        .agent-dropdown {
+            position: relative;
+        }
+        .agent-selected {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.15s;
+            user-select: none;
+            font-size: 13px;
+        }
+        .agent-selected:hover {
+            border-color: var(--accent);
+            background: var(--bg-hover);
+        }
+        .agent-selected .sel-icon { font-size: 14px; flex-shrink: 0; }
+        .agent-selected .sel-name {
+            font-weight: 500;
+            color: var(--text-primary);
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .agent-selected .sel-arrow {
+            font-size: 8px;
+            color: var(--text-muted);
+            transition: transform 0.2s;
+            flex-shrink: 0;
+        }
+        .agent-dropdown.open .sel-arrow { transform: rotate(180deg); }
+        .agent-dropdown.open .agent-selected {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-subtle);
+        }
+        .agent-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            width: 340px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+            padding: 4px;
+        }
+        .agent-dropdown.open .agent-menu { display: block; }
+        .agent-menu::-webkit-scrollbar { width: 5px; }
+        .agent-menu::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        .agent-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            cursor: pointer;
+            transition: background 0.1s;
+            border-radius: var(--radius-sm);
+            margin-bottom: 2px;
+        }
+        .agent-option:last-child { margin-bottom: 0; }
+        .agent-option:hover { background: var(--bg-hover); }
+        .agent-option.selected { background: var(--accent-subtle); }
+        .agent-option .opt-icon { font-size: 20px; flex-shrink: 0; width: 28px; text-align: center; }
+        .agent-option .opt-info { flex: 1; min-width: 0; }
+        .agent-option .opt-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        .agent-option .opt-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 1px;
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .agent-option .opt-check {
+            font-size: 16px;
+            color: var(--accent);
+            flex-shrink: 0;
+            visibility: hidden;
+        }
+        .agent-option.selected .opt-check { visibility: visible; }
+
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .header-status .status-dot {
+            width: 6px; height: 6px;
         }
         .toggle-switch {
             position: relative;
@@ -304,7 +505,7 @@
         .chat-area {
             flex: 1;
             overflow-y: auto;
-            padding: 24px 0;
+            padding: 16px 0;
         }
         .chat-area::-webkit-scrollbar { width: 6px; }
         .chat-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -654,18 +855,45 @@
             align-items: center;
             justify-content: center;
             flex: 1;
-            padding: 40px 24px;
+            padding: 60px 24px 40px;
             text-align: center;
         }
+        .welcome-icon {
+            width: 72px;
+            height: 72px;
+            margin-bottom: 16px;
+        }
+        .welcome-icon img {
+            width: 100%;
+            height: 100%;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(99,102,241,0.3);
+        }
         .welcome h2 {
-            font-size: 28px;
+            font-size: 26px;
             font-weight: 700;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
+            letter-spacing: -0.3px;
         }
         .welcome p {
             color: var(--text-secondary);
-            max-width: 520px;
-            margin-bottom: 32px;
+            max-width: 480px;
+            margin-bottom: 28px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .welcome-sub {
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 24px;
+        }
+        .welcome-sub .dot {
+            width: 4px; height: 4px;
+            border-radius: 50%;
+            background: var(--text-muted);
         }
 
         .quick-grid {
@@ -696,16 +924,24 @@
 
         /* ── Input Bar ── */
         .input-area {
-            padding: 16px 24px 20px;
-            background: var(--bg-primary);
-            border-top: 1px solid var(--border);
+            padding: 12px 24px 16px;
+            background: linear-gradient(to top, var(--bg-primary) 70%, transparent);
         }
         .input-container {
-            max-width: 820px;
+            max-width: 780px;
             margin: 0 auto;
             display: flex;
-            gap: 10px;
+            gap: 8px;
             align-items: flex-end;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 6px 6px 6px 4px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .input-container:focus-within {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-subtle);
         }
         .input-box {
             flex: 1;
@@ -713,29 +949,26 @@
         }
         .input-box textarea {
             width: 100%;
-            background: var(--bg-input);
-            border: 1px solid var(--border);
+            background: transparent;
+            border: none;
             color: var(--text-primary);
-            padding: 12px 16px;
-            border-radius: var(--radius);
+            padding: 8px 12px;
             font-size: 14px;
             font-family: var(--font);
             resize: none;
             outline: none;
-            min-height: 48px;
+            min-height: 40px;
             max-height: 160px;
             line-height: 1.5;
-            transition: border-color 0.15s;
         }
         .input-box textarea::placeholder { color: var(--text-muted); }
-        .input-box textarea:focus { border-color: var(--accent); }
 
         .send-btn {
-            width: 48px;
-            height: 48px;
+            width: 36px;
+            height: 36px;
             background: var(--accent);
             border: none;
-            border-radius: var(--radius);
+            border-radius: 10px;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -745,30 +978,30 @@
         }
         .send-btn:hover { background: var(--accent-hover); }
         .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .send-btn svg { width: 20px; height: 20px; fill: #fff; }
+        .send-btn svg { width: 16px; height: 16px; fill: #fff; }
 
         /* ── File Upload ── */
         .upload-btn {
-            width: 48px;
-            height: 48px;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
+            width: 36px;
+            height: 36px;
+            background: transparent;
+            border: none;
+            border-radius: 10px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.15s;
             flex-shrink: 0;
-            color: var(--text-secondary);
-            font-size: 20px;
+            color: var(--text-muted);
+            font-size: 18px;
         }
-        .upload-btn:hover { background: var(--bg-hover); border-color: var(--border-light); color: var(--text-primary); }
+        .upload-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
         .file-chips {
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
-            max-width: 820px;
+            max-width: 780px;
             margin: 0 auto;
             padding: 0 0 8px;
         }
@@ -796,35 +1029,20 @@
 
         /* ── Mobile ── */
         @media (max-width: 768px) {
-            .sidebar { display: none; }
+            .sidebar { margin-left: calc(-1 * var(--sidebar-w)); opacity: 0; pointer-events: none; }
+            .sidebar.show-mobile { margin-left: 0; opacity: 1; pointer-events: auto; position: fixed; z-index: 999; height: 100vh; }
             .quick-grid { grid-template-columns: 1fr; }
+            .header-brand { display: none; }
+            .agent-selected .sel-name { max-width: 120px; }
         }
-
-        /* ── Theme Toggle ── */
-        .theme-toggle {
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border);
-            color: var(--text-secondary);
-            padding: 8px;
-            border-radius: var(--radius-sm);
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.15s;
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-        }
-        .theme-toggle:hover { background: var(--bg-hover); color: var(--text-primary); }
 
         /* ── Stop Button ── */
         .stop-btn {
-            width: 48px;
-            height: 48px;
+            width: 36px;
+            height: 36px;
             background: var(--red);
             border: none;
-            border-radius: var(--radius);
+            border-radius: 10px;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -832,7 +1050,7 @@
             transition: all 0.15s;
             flex-shrink: 0;
             color: #fff;
-            font-size: 18px;
+            font-size: 14px;
         }
         .stop-btn:hover { opacity: 0.85; }
 
@@ -1229,67 +1447,43 @@
 </head>
 <body>
     <!-- Sidebar -->
-    <aside class="sidebar">
-        <div class="sidebar-header">
-            <h1>💹 FinanceGPT</h1>
-            <p>AI Financial Advisor · India</p>
+    <aside class="sidebar" id="sidebar">
+        <div style="padding:10px 12px 6px; display:flex; gap:6px;">
+            <button class="btn-clear" onclick="newChat()" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:8px; font-weight:500;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                New Chat
+            </button>
         </div>
 
         <div class="sidebar-section">
-            <h3>Agent Selection</h3>
-        </div>
-        <div class="agent-list" id="agentList">
-            <div class="agent-item active" data-agent="auto" onclick="selectAgent('auto', this)">
-                <span class="icon">🔄</span>
-                <div class="info">
-                    <div class="name">Auto-Route</div>
-                    <div class="desc">Smart agent selection</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="sidebar-section" style="display:flex; justify-content:space-between; align-items:center;">
             <h3>Conversations</h3>
-            <button class="btn-clear" onclick="newChat()" style="width:auto; padding:3px 10px; font-size:11px;">+ New</button>
         </div>
         <div class="session-list" id="sessionList">
             <div class="session-empty">No saved conversations</div>
         </div>
 
-        <div class="sidebar-section">
-            <h3>Quick Actions</h3>
-        </div>
-        <div style="padding: 0 12px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
-            <button class="btn-clear" onclick="sendQuick('Nifty 50 & Sensex overview today')">📊 Markets</button>
-            <button class="btn-clear" onclick="sendQuick('Best mutual funds for SIP 2025')">📈 MF Picks</button>
-            <button class="btn-clear" onclick="sendQuick('Tax: ₹12L salary new vs old regime')">🏛️ Tax</button>
-            <button class="btn-clear" onclick="sendQuick('EMI for ₹50L home loan at 8.5%')">🏠 EMI</button>
-            <button class="btn-clear" onclick="sendQuick('SIP ₹10,000/month for 20 years at 12%')">🏖️ SIP</button>
-            <button class="btn-clear" onclick="sendQuick('Budget for ₹75,000 monthly salary')">💰 Budget</button>
-        </div>
-
         <div class="sidebar-footer">
-            <button class="btn-clear" onclick="openCalculators()" style="background:var(--accent-subtle); border-color:var(--accent); color:var(--text-primary); font-weight:500;">🧮 Financial Calculators</button>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px;">
-                <button class="btn-clear" onclick="clearChat()">🗑️ Clear Chat</button>
-                <button class="btn-clear" onclick="exportChat()">📥 Export</button>
+                <button class="btn-clear" onclick="openCalculators()" style="display:flex; align-items:center; justify-content:center; gap:4px;">🧮 Calculators</button>
+                <button class="btn-clear" onclick="exportChat()" style="display:flex; align-items:center; justify-content:center; gap:4px;">📥 Export</button>
             </div>
             <div class="toggle-row">
-                <span>💾 Save conversations</span>
+                <span style="display:flex;align-items:center;gap:0;">💾 Save conversations
+                    <button class="info-btn" onclick="toggleInfoPopover(event)" title="Storage info">i</button>
+                </span>
                 <label class="toggle-switch">
                     <input type="checkbox" id="saveToggle" onchange="toggleSaveConversation(this.checked)" checked>
                     <span class="toggle-slider"></span>
                 </label>
             </div>
-            <button class="theme-toggle" onclick="toggleTheme()">
-                <span id="themeIcon">☀️</span>
-                <span id="themeLabel">Light Mode</span>
-            </button>
-            <div class="status">
+            <div class="status" style="justify-content:center;">
                 <span class="status-dot" id="statusDot"></span>
                 <span id="statusText">Connecting...</span>
             </div>
-            <div class="status" style="font-size:11px;">🔒 100% Local · No data leaves your PC</div>
+            <div style="margin-top:4px; padding:8px 12px; background:linear-gradient(135deg, rgba(34,197,94,0.1), rgba(99,102,241,0.1)); border:1px solid rgba(34,197,94,0.25); border-radius:8px; text-align:center;">
+                <div style="font-size:13px; font-weight:600; color:var(--green); letter-spacing:0.3px;">🔒 100% Local</div>
+                <div style="font-size:10px; color:var(--text-secondary); margin-top:2px;">Your data never leaves your machine</div>
+            </div>
         </div>
     </aside>
 
@@ -1311,22 +1505,70 @@
         </div>
     </div>
 
+    <!-- Info popover (fixed position, outside sidebar overflow) -->
+    <div class="info-popover" id="infoPopover">
+        <strong>Session Storage</strong>
+        <ul>
+            <li>Last <strong>5</strong> conversations are kept automatically</li>
+            <li>Older unpinned sessions are purged when new ones are saved</li>
+            <li>📌 <strong>Pin</strong> a conversation to preserve it from auto-purge</li>
+            <li>Pinned sessions are never deleted</li>
+            <li>Toggle off to chat without saving</li>
+        </ul>
+    </div>
+
     <!-- Main -->
     <main class="main">
+        <header class="top-header">
+            <div class="header-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+                <div class="header-brand">
+                    <img src="/static/logo.svg" alt="Logo" style="width:24px;height:24px;border-radius:5px;"> FinanceGPT
+                </div>
+            </div>
+            <div class="header-center">
+                <div class="agent-dropdown" id="agentDropdown">
+                    <div class="agent-selected" onclick="toggleAgentMenu()">
+                        <span class="sel-icon" id="selIcon">🔄</span>
+                        <span class="sel-name" id="selName">Auto-Route</span>
+                        <span class="sel-arrow">▼</span>
+                    </div>
+                    <div class="agent-menu" id="agentMenu"></div>
+                </div>
+            </div>
+            <div class="header-right">
+                <button class="header-btn" onclick="newChat()" title="New conversation">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    New
+                </button>
+                <button class="theme-icon-btn" onclick="toggleTheme()" id="themeToggleBtn" title="Toggle theme">
+                    <span id="themeIcon">☀️</span>
+                </button>
+            </div>
+        </header>
         <div class="chat-area" id="chatArea">
             <div class="message-wrapper" id="messages">
                 <!-- Welcome screen -->
                 <div class="welcome" id="welcome">
-                    <h2>💹 FinanceGPT</h2>
-                    <p>Your AI-powered personal financial advisor for the Indian market. Ask about stocks (NSE/BSE), mutual funds, SIP, taxes, loans, or budgeting — all powered by a local LLM running on your machine.</p>
+                    <div class="welcome-icon"><img src="/static/logo.svg" alt="FinanceGPT"></div>
+                    <h2>What can I help you with?</h2>
+                    <p>Your AI financial advisor for the Indian market. Stocks, mutual funds, tax planning, loans, budgeting — all powered locally on your machine.</p>
                     <div class="quick-grid">
                         <button class="quick-btn" onclick="sendQuick('Analyze Reliance Industries stock — fundamentals and outlook')">📈 Analyze Reliance Industries stock</button>
                         <button class="quick-btn" onclick="sendQuick('Best ELSS mutual funds for tax saving under Section 80C')">📊 Best ELSS funds for tax saving</button>
-                        <button class="quick-btn" onclick="sendQuick('Compare new vs old tax regime for ₹15 lakh salary')">🏛️ New vs Old tax regime for ₹15L</button>
+                        <button class="quick-btn" onclick="sendQuick('Compare new vs old tax regime for ₹15 lakh salary')">🏛️ New vs Old tax regime</button>
                         <button class="quick-btn" onclick="sendQuick('Calculate SIP: ₹10,000/month for 10, 20, 30 years at 12%')">🏖️ SIP returns calculator</button>
-                        <button class="quick-btn" onclick="sendQuick('Calculate home loan EMI for ₹40 lakh at 8.5% for 20 years with tax benefits')">🏠 Home loan EMI with tax benefits</button>
-                        <button class="quick-btn" onclick="sendQuick('I earn ₹1 lakh/month. Create a detailed budget with savings plan.')">💰 Budget for ₹1L monthly salary</button>
-                        <button class="quick-btn" onclick="openCalculators()" style="border-color:var(--accent); background:var(--accent-subtle);">🧮 Open Financial Calculators</button>
+                        <button class="quick-btn" onclick="sendQuick('Calculate home loan EMI for ₹40 lakh at 8.5% for 20 years with tax benefits')">🏠 Home loan EMI + tax benefits</button>
+                        <button class="quick-btn" onclick="sendQuick('I earn ₹1 lakh/month. Create a detailed budget with savings plan.')">💰 Budget for ₹1L salary</button>
+                    </div>
+                    <div class="welcome-sub">
+                        <span>🔒 100% Local</span>
+                        <span class="dot"></span>
+                        <span>10 Specialist Agents</span>
+                        <span class="dot"></span>
+                        <span>20+ Calculators</span>
                     </div>
                 </div>
             </div>
@@ -1350,6 +1592,9 @@
                     ■
                 </button>
             </div>
+            <div style="text-align:center; padding:6px 0 0; font-size:10px; color:var(--text-muted); max-width:780px; margin:0 auto; letter-spacing:0.2px;">
+                FinanceGPT can make mistakes. Verify important financial decisions with a certified advisor.
+            </div>
         </div>
     </main>
 
@@ -1370,25 +1615,14 @@
         const welcome = document.getElementById('welcome');
 
         // ── Init: Load agents ──
+        const agentData = [{ key: 'auto', icon: '🔄', name: 'Auto-Route', description: 'Smart agent selection based on your query' }];
+
         async function loadAgents() {
             try {
                 const res = await fetch('/api/agents');
                 const agents = await res.json();
-                const list = document.getElementById('agentList');
-
-                agents.forEach(a => {
-                    const div = document.createElement('div');
-                    div.className = 'agent-item';
-                    div.dataset.agent = a.key;
-                    div.onclick = () => selectAgent(a.key, div);
-                    div.innerHTML = `
-                        <span class="icon">${a.icon}</span>
-                        <div class="info">
-                            <div class="name">${a.name}</div>
-                            <div class="desc">${a.description}</div>
-                        </div>`;
-                    list.appendChild(div);
-                });
+                agents.forEach(a => agentData.push(a));
+                renderAgentMenu();
 
                 // Check health
                 const health = await fetch('/api/health');
@@ -1402,10 +1636,51 @@
             }
         }
 
-        function selectAgent(key, el) {
-            document.querySelectorAll('.agent-item').forEach(i => i.classList.remove('active'));
-            el.classList.add('active');
+        function renderAgentMenu() {
+            const menu = document.getElementById('agentMenu');
+            menu.innerHTML = '';
+            agentData.forEach(a => {
+                const opt = document.createElement('div');
+                opt.className = 'agent-option' + (a.key === selectedAgent ? ' selected' : '');
+                opt.onclick = () => selectAgent(a.key);
+                opt.innerHTML = `
+                    <span class="opt-icon">${a.icon}</span>
+                    <div class="opt-info">
+                        <div class="opt-name">${a.name}</div>
+                        <div class="opt-desc">${a.description}</div>
+                    </div>
+                    <span class="opt-check">✓</span>`;
+                menu.appendChild(opt);
+            });
+        }
+
+        function toggleAgentMenu() {
+            const dd = document.getElementById('agentDropdown');
+            const opening = !dd.classList.contains('open');
+            dd.classList.toggle('open');
+            if (opening) {
+                // Close on outside click
+                const close = (e) => {
+                    if (!dd.contains(e.target)) {
+                        dd.classList.remove('open');
+                        document.removeEventListener('click', close);
+                    }
+                };
+                setTimeout(() => document.addEventListener('click', close), 0);
+            }
+        }
+
+        function selectAgent(key) {
             selectedAgent = key;
+            const agent = agentData.find(a => a.key === key) || agentData[0];
+            document.getElementById('selIcon').textContent = agent.icon;
+            document.getElementById('selName').textContent = agent.name;
+            document.getElementById('agentDropdown').classList.remove('open');
+            renderAgentMenu();
+        }
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('collapsed');
         }
 
         // ── Send Message ──
@@ -1953,7 +2228,7 @@
             html.setAttribute('data-theme', next);
             localStorage.setItem('financegpt_theme', next);
             document.getElementById('themeIcon').textContent = next === 'dark' ? '☀️' : '🌙';
-            document.getElementById('themeLabel').textContent = next === 'dark' ? 'Light Mode' : 'Dark Mode';
+            document.getElementById('themeToggleBtn').title = next === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
             // Switch highlight.js theme
             const hljsLink = document.getElementById('hljs-theme');
             if (hljsLink) {
@@ -2488,6 +2763,31 @@
         });
 
         // ── Session History ──
+        function toggleInfoPopover(e) {
+            e.stopPropagation();
+            const pop = document.getElementById('infoPopover');
+            const isShowing = pop.classList.toggle('show');
+            if (isShowing) {
+                // Position the fixed popover relative to the button
+                const btn = e.currentTarget;
+                const rect = btn.getBoundingClientRect();
+                // Place above the button, right-aligned
+                pop.style.left = Math.max(8, rect.left - 200) + 'px';
+                pop.style.top = Math.max(8, rect.top - pop.offsetHeight - 8) + 'px';
+                // If it would go above viewport, place below instead
+                if (rect.top - pop.offsetHeight - 8 < 8) {
+                    pop.style.top = (rect.bottom + 8) + 'px';
+                }
+                const close = (ev) => {
+                    if (!pop.contains(ev.target) && ev.target !== btn) {
+                        pop.classList.remove('show');
+                        document.removeEventListener('click', close);
+                    }
+                };
+                setTimeout(() => document.addEventListener('click', close), 0);
+            }
+        }
+
         function toggleSaveConversation(enabled) {
             saveConversation = enabled;
             localStorage.setItem('financegpt_save', enabled ? 'true' : 'false');
@@ -2507,10 +2807,14 @@
                     const div = document.createElement('div');
                     div.className = 'session-item' + (s.session_id === sessionId ? ' active' : '');
                     const age = formatTimeAgo(s.updated_at);
+                    const pinClass = s.pinned ? ' pinned' : '';
+                    const pinIcon = s.pinned ? '📌' : '📌';
+                    const pinTitle = s.pinned ? 'Unpin (allow auto-delete)' : 'Pin (preserve from auto-delete)';
                     div.innerHTML = `
-                        <span style="font-size:14px;">💬</span>
+                        <span style="font-size:14px;">${s.pinned ? '📌' : '💬'}</span>
                         <span class="session-title" title="${escapeHtml(s.title)}">${escapeHtml(s.title)}</span>
                         <span class="session-meta">${age}</span>
+                        <span class="session-pin${pinClass}" onclick="event.stopPropagation(); togglePin('${s.session_id}', ${!s.pinned})" title="${pinTitle}">${pinIcon}</span>
                         <span class="session-delete" onclick="event.stopPropagation(); deleteSession('${s.session_id}')" title="Delete">✕</span>
                     `;
                     div.onclick = () => restoreSession(s.session_id);
@@ -2616,6 +2920,19 @@
                 }
             } catch (e) {
                 console.error('Failed to delete session:', e);
+            }
+        }
+
+        async function togglePin(sid, pin) {
+            try {
+                await fetch(`/api/sessions/${sid}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pinned: pin }),
+                });
+                loadSessions();
+            } catch (e) {
+                console.error('Failed to toggle pin:', e);
             }
         }
 
