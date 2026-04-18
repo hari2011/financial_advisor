@@ -19,6 +19,12 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
+try:
+    import trafilatura
+    _HAS_TRAFILATURA = True
+except ImportError:
+    _HAS_TRAFILATURA = False
+
 from tools.web_search import _ddgs_with_retry, query_to_search
 
 logger = logging.getLogger("financegpt.tools.deep_research")
@@ -156,8 +162,10 @@ _REQUEST_HEADERS = {
 
 
 def _extract_page_text(url: str, max_chars: int = 3000) -> str:
-    """Fetch a URL and extract the main article text using BeautifulSoup.
+    """Fetch a URL and extract the main article text.
 
+    Primary: trafilatura (purpose-built for article extraction).
+    Fallback: BeautifulSoup heuristic parsing.
     Returns cleaned text up to max_chars, or empty string on failure.
     """
     # Check cache
@@ -177,51 +185,63 @@ def _extract_page_text(url: str, max_chars: int = 3000) -> str:
         if "text/html" not in content_type:
             return ""
 
-        soup = BeautifulSoup(resp.text, "html.parser")
+        html = resp.text
+        result = ""
 
-        # Remove noise elements
-        for tag in soup(["script", "style", "nav", "footer", "header",
-                         "aside", "form", "iframe", "noscript",
-                         "figure", "figcaption", "svg", "button"]):
-            tag.decompose()
+        # Primary: trafilatura
+        if _HAS_TRAFILATURA:
+            extracted = trafilatura.extract(
+                html,
+                include_comments=False,
+                include_tables=True,
+                no_fallback=False,
+                favor_precision=True,
+            )
+            if extracted:
+                result = extracted[:max_chars]
 
-        # Try to find main content via common article selectors
-        article = (
-            soup.find("article") or
-            soup.find("main") or
-            soup.find("div", class_=re.compile(r"article|content|post|entry|story", re.I)) or
-            soup.find("div", id=re.compile(r"article|content|post|entry|story", re.I))
-        )
+        # Fallback: BeautifulSoup
+        if not result:
+            soup = BeautifulSoup(html, "html.parser")
 
-        if article:
-            paragraphs = article.find_all("p")
-        else:
-            paragraphs = soup.find_all("p")
+            for tag in soup(["script", "style", "nav", "footer", "header",
+                             "aside", "form", "iframe", "noscript",
+                             "figure", "figcaption", "svg", "button"]):
+                tag.decompose()
 
-        # Extract and clean text
-        texts = []
-        total_len = 0
-        for p in paragraphs:
-            t = p.get_text(separator=" ", strip=True)
-            # Skip very short paragraphs (navs, buttons) or cookie notices
-            if len(t) < 40:
-                continue
-            if any(skip in t.lower() for skip in [
-                "cookie", "subscribe", "sign up", "newsletter",
-                "accept all", "privacy policy", "terms of use"
-            ]):
-                continue
-            texts.append(t)
-            total_len += len(t)
-            if total_len >= max_chars:
-                break
+            article = (
+                soup.find("article") or
+                soup.find("main") or
+                soup.find("div", class_=re.compile(
+                    r"article|content|post|entry|story", re.I)) or
+                soup.find("div", id=re.compile(
+                    r"article|content|post|entry|story", re.I))
+            )
 
-        result = "\n".join(texts)[:max_chars]
+            paragraphs = (article.find_all("p") if article
+                          else soup.find_all("p"))
+
+            texts = []
+            total_len = 0
+            for p in paragraphs:
+                t = p.get_text(separator=" ", strip=True)
+                if len(t) < 40:
+                    continue
+                if any(skip in t.lower() for skip in [
+                    "cookie", "subscribe", "sign up", "newsletter",
+                    "accept all", "privacy policy", "terms of use"
+                ]):
+                    continue
+                texts.append(t)
+                total_len += len(t)
+                if total_len >= max_chars:
+                    break
+
+            result = "\n".join(texts)[:max_chars]
 
         # Cache it
         if result:
             _page_cache[url] = (result, time.time())
-            # Evict old cache entries
             if len(_page_cache) > 50:
                 oldest = min(_page_cache, key=lambda k: _page_cache[k][1])
                 del _page_cache[oldest]
@@ -387,11 +407,12 @@ def _format_cited_context(sources: list[dict]) -> str:
 # MAIN ENTRY POINT
 # ─────────────────────────────────────────────────────────────────
 
-def deep_research(query: str, max_context_chars: int = 5000) -> str:
+def deep_research(query: str, max_context_chars: int = 5000,
+                  search_queries: list[str] | None = None) -> str:
     """Performs deep web research.
 
     Steps:
-      1. Decompose query into 2-3 sub-queries
+      1. Use LLM-generated search queries if provided, else decompose query
       2. Multi-source search (news + text)
       3. Fetch top page content in parallel
       4. Rank, select within budget
@@ -400,6 +421,8 @@ def deep_research(query: str, max_context_chars: int = 5000) -> str:
     Args:
         query: User's natural language question
         max_context_chars: Maximum characters for the formatted output
+        search_queries: Optional LLM-generated search queries (from router).
+                       If provided, skips rule-based decomposition.
 
     Returns:
         Formatted string with numbered sources and citations,
@@ -415,9 +438,13 @@ def deep_research(query: str, max_context_chars: int = 5000) -> str:
             logger.info(f"Deep research cache hit ({len(text)} chars)")
             return text
 
-    # Step 1: Decompose
-    sub_queries = decompose_query(query)
-    logger.info(f"Deep research: {len(sub_queries)} sub-queries for: {query[:60]}")
+    # Step 1: Get search queries (LLM-generated or rule-based fallback)
+    if search_queries:
+        sub_queries = search_queries[:3]
+        logger.info(f"Deep research: {len(sub_queries)} LLM-generated queries for: {query[:60]}")
+    else:
+        sub_queries = decompose_query(query)
+        logger.info(f"Deep research: {len(sub_queries)} rule-based queries for: {query[:60]}")
 
     # Step 2: Multi-source search
     results = _search_multiple_queries(sub_queries, results_per_query=4)

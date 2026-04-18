@@ -187,6 +187,110 @@
         }
         .btn-clear:hover { background: var(--bg-hover); color: var(--text-primary); }
 
+        /* ── Session History ── */
+        .session-list {
+            overflow-y: auto;
+            padding: 0 12px 8px;
+            max-height: 200px;
+        }
+        .session-list::-webkit-scrollbar { width: 4px; }
+        .session-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        .session-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.15s;
+            border: 1px solid transparent;
+            margin-bottom: 2px;
+            font-size: 12px;
+        }
+        .session-item:hover { background: var(--bg-hover); }
+        .session-item.active {
+            background: var(--accent-subtle);
+            border-color: var(--accent);
+        }
+        .session-item .session-title {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--text-primary);
+        }
+        .session-item .session-meta {
+            font-size: 10px;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+        .session-item .session-delete {
+            opacity: 0;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 14px;
+            padding: 0 4px;
+            transition: opacity 0.15s;
+            flex-shrink: 0;
+        }
+        .session-item:hover .session-delete { opacity: 1; }
+        .session-item .session-delete:hover { color: var(--red); }
+        .session-empty {
+            font-size: 11px;
+            color: var(--text-muted);
+            padding: 8px 12px;
+            text-align: center;
+        }
+
+        /* ── Toggle Switch ── */
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-secondary);
+            padding: 4px 0;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 36px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            transition: 0.2s;
+        }
+        .toggle-slider::before {
+            content: "";
+            position: absolute;
+            height: 14px;
+            width: 14px;
+            left: 2px;
+            bottom: 2px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            transition: 0.2s;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+        .toggle-switch input:checked + .toggle-slider::before {
+            transform: translateX(16px);
+            background: white;
+        }
+
         /* ── Main Area ── */
         .main {
             flex: 1;
@@ -1144,6 +1248,14 @@
             </div>
         </div>
 
+        <div class="sidebar-section" style="display:flex; justify-content:space-between; align-items:center;">
+            <h3>Conversations</h3>
+            <button class="btn-clear" onclick="newChat()" style="width:auto; padding:3px 10px; font-size:11px;">+ New</button>
+        </div>
+        <div class="session-list" id="sessionList">
+            <div class="session-empty">No saved conversations</div>
+        </div>
+
         <div class="sidebar-section">
             <h3>Quick Actions</h3>
         </div>
@@ -1161,6 +1273,13 @@
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px;">
                 <button class="btn-clear" onclick="clearChat()">🗑️ Clear Chat</button>
                 <button class="btn-clear" onclick="exportChat()">📥 Export</button>
+            </div>
+            <div class="toggle-row">
+                <span>💾 Save conversations</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="saveToggle" onchange="toggleSaveConversation(this.checked)" checked>
+                    <span class="toggle-slider"></span>
+                </label>
             </div>
             <button class="theme-toggle" onclick="toggleTheme()">
                 <span id="themeIcon">☀️</span>
@@ -1239,6 +1358,7 @@
         let selectedAgent = 'auto';
         let isStreaming = false;
         let sessionId = localStorage.getItem('financegpt_session') || null;
+        let saveConversation = localStorage.getItem('financegpt_save') !== 'false'; // default on
         let currentAbort = null;  // AbortController for stop generation
         let lastQuery = null;     // For regeneration
         let lastAgent = null;     // For regeneration
@@ -1366,7 +1486,7 @@
                 const res = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query, agent: selectedAgent, session_id: sessionId }),
+                    body: JSON.stringify({ query, agent: selectedAgent, session_id: sessionId, save_conversation: saveConversation }),
                     signal: currentAbort.signal,
                 });
 
@@ -1411,7 +1531,7 @@
                                         const mainEl2 = statusEl.querySelector('.thinking-dots + div > div:first-child');
                                         const stageEl2 = statusEl.querySelector('.thinking-stage');
                                         if (mainEl2) mainEl2.textContent = 'Generating response...';
-                                        if (stageEl2) stageEl2.textContent = 'Waiting for first token from LLM';
+                                        if (stageEl2) stageEl2.textContent = 'Waiting for AI response';
                                         // Don't reset userScrolledUp here — respect user's scroll position
                                     } else if (data.step === 'context') {
                                         const stageMap = {
@@ -1425,6 +1545,16 @@
                                         const stageEl = statusEl.querySelector('.thinking-stage');
                                         const mainEl = statusEl.querySelector('.thinking-dots + div > div:first-child');
                                         if (mainEl) mainEl.textContent = 'Building response...';
+                                        if (stageEl) stageEl.textContent = data.message;
+                                    } else if (data.step === 'reflecting') {
+                                        const stageEl = statusEl.querySelector('.thinking-stage');
+                                        const mainEl = statusEl.querySelector('.thinking-dots + div > div:first-child');
+                                        if (mainEl) mainEl.textContent = '🔍 Reviewing response quality...';
+                                        if (stageEl) stageEl.textContent = 'Self-evaluation in progress';
+                                    } else if (data.step === 'refining') {
+                                        const stageEl = statusEl.querySelector('.thinking-stage');
+                                        const mainEl = statusEl.querySelector('.thinking-dots + div > div:first-child');
+                                        if (mainEl) mainEl.textContent = '✨ Improving response...';
                                         if (stageEl) stageEl.textContent = data.message;
                                     } else {
                                         statusEl.className = 'thinking-indicator';
@@ -1455,6 +1585,14 @@
 
                                 case 'timing':
                                     timingData = data;
+                                    break;
+
+                                case 'clear':
+                                    // Reflection found gaps — clear streamed tokens for refined response
+                                    rawText = '';
+                                    streamEl.innerHTML = '';
+                                    streamEl.style.display = 'none';
+                                    statusEl.style.display = '';
                                     break;
 
                                 case 'done':
@@ -1547,6 +1685,8 @@
                                         }
                                     }
                                     scrollToBottom(true);
+                                    // Refresh session list after successful response
+                                    if (saveConversation) loadSessions();
                                     break;
 
                                 case 'error':
@@ -1673,6 +1813,7 @@
                 messages.appendChild(welcome);
                 welcome.style.display = 'flex';
             }
+            loadSessions();
         }
 
         // ── Markdown Renderer (marked.js + DOMPurify) ──
@@ -2346,8 +2487,143 @@
             }
         });
 
+        // ── Session History ──
+        function toggleSaveConversation(enabled) {
+            saveConversation = enabled;
+            localStorage.setItem('financegpt_save', enabled ? 'true' : 'false');
+        }
+
+        async function loadSessions() {
+            try {
+                const res = await fetch('/api/sessions');
+                const sessions = await res.json();
+                const list = document.getElementById('sessionList');
+                if (!sessions.length) {
+                    list.innerHTML = '<div class="session-empty">No saved conversations</div>';
+                    return;
+                }
+                list.innerHTML = '';
+                sessions.forEach(s => {
+                    const div = document.createElement('div');
+                    div.className = 'session-item' + (s.session_id === sessionId ? ' active' : '');
+                    const age = formatTimeAgo(s.updated_at);
+                    div.innerHTML = `
+                        <span style="font-size:14px;">💬</span>
+                        <span class="session-title" title="${escapeHtml(s.title)}">${escapeHtml(s.title)}</span>
+                        <span class="session-meta">${age}</span>
+                        <span class="session-delete" onclick="event.stopPropagation(); deleteSession('${s.session_id}')" title="Delete">✕</span>
+                    `;
+                    div.onclick = () => restoreSession(s.session_id);
+                    list.appendChild(div);
+                });
+            } catch (e) {
+                console.warn('Failed to load sessions:', e);
+            }
+        }
+
+        function formatTimeAgo(timestamp) {
+            const diff = (Date.now() / 1000) - timestamp;
+            if (diff < 60) return 'now';
+            if (diff < 3600) return Math.floor(diff / 60) + 'm';
+            if (diff < 86400) return Math.floor(diff / 3600) + 'h';
+            if (diff < 604800) return Math.floor(diff / 86400) + 'd';
+            return new Date(timestamp * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function restoreSession(sid) {
+            if (isStreaming) return;
+            try {
+                const res = await fetch(`/api/sessions/${sid}`);
+                if (!res.ok) return;
+                const data = await res.json();
+
+                // Switch to this session
+                sessionId = sid;
+                localStorage.setItem('financegpt_session', sessionId);
+
+                // Clear current chat
+                messages.innerHTML = '';
+                if (welcome) welcome.style.display = 'none';
+                uploadedFiles = [];
+                document.getElementById('fileChips').innerHTML = '';
+
+                // Render past exchanges
+                const exchanges = data.exchanges || [];
+                exchanges.forEach(ex => {
+                    addMessage('user', ex.user);
+                    const msgEl = addMessage('assistant', '', false);
+                    const contentEl = msgEl.querySelector('.content');
+                    contentEl.innerHTML = renderMarkdown(ex.assistant);
+                    // Highlight code blocks
+                    contentEl.querySelectorAll('pre code').forEach(block => {
+                        if (typeof hljs !== 'undefined') hljs.highlightElement(block);
+                    });
+                    // Render KaTeX
+                    if (typeof renderMathInElement !== 'undefined') {
+                        renderMathInElement(contentEl, {
+                            delimiters: [
+                                {left: '$$', right: '$$', display: true},
+                                {left: '$', right: '$', display: false},
+                                {left: '\\(', right: '\\)', display: false},
+                                {left: '\\[', right: '\\]', display: true},
+                            ],
+                            throwOnError: false,
+                        });
+                    }
+                    transformCitations(contentEl);
+                });
+
+                // Scroll to bottom after restore
+                scrollToBottom(true);
+
+                // Highlight active session in sidebar
+                loadSessions();
+            } catch (e) {
+                console.error('Failed to restore session:', e);
+            }
+        }
+
+        function newChat() {
+            if (isStreaming) return;
+            sessionId = null;
+            localStorage.removeItem('financegpt_session');
+            uploadedFiles = [];
+            document.getElementById('fileChips').innerHTML = '';
+            messages.innerHTML = '';
+            if (welcome) {
+                messages.appendChild(welcome);
+                welcome.style.display = 'flex';
+            }
+            loadSessions();
+            userInput.focus();
+        }
+
+        async function deleteSession(sid) {
+            try {
+                await fetch(`/api/session/${sid}`, { method: 'DELETE' });
+                await fetch(`/api/upload/${sid}`, { method: 'DELETE' });
+                // If we deleted the current session, start fresh
+                if (sid === sessionId) {
+                    newChat();
+                } else {
+                    loadSessions();
+                }
+            } catch (e) {
+                console.error('Failed to delete session:', e);
+            }
+        }
+
         // ── Boot ──
         loadAgents();
+        loadSessions();
+        // Restore toggle state
+        document.getElementById('saveToggle').checked = saveConversation;
         userInput.focus();
     </script>
 </body>

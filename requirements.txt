@@ -10,6 +10,7 @@ numpy>=1.24.0
 numpy-financial>=1.0.0
 requests>=2.31.0
 beautifulsoup4>=4.12.0
+trafilatura>=1.6.0
 python-multipart
 PyMuPDF>=1.24.0
 pdfplumber

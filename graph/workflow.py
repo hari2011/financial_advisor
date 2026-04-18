@@ -139,12 +139,18 @@ def format_profile(profile: dict) -> str:
 # ──────────────────────── Node Functions ────────────────────────
 
 def route_node(state: dict) -> dict:
-    """Route query to appropriate agent(s) using keyword + LLM hybrid router."""
+    """Route query to appropriate agent(s) using keyword + LLM hybrid router.
+    
+    Also determines query complexity (simple/moderate/complex) which controls:
+    - Whether context gathering runs (simple queries skip it)
+    - Whether response reflection runs (complex queries get quality checks)
+    - Which tools are invoked (adaptive tool selection)
+    """
     query = state["query"]
     manual = state.get("manual_agent")
 
     manual_key = None if manual == "auto" else manual
-    routed = route_query(query, manual_key)
+    routed, search_queries, complexity = route_query(query, manual_key)
 
     agent_keys = [r[0] for r in routed]
     agent_instances = {r[0]: r[1] for r in routed}
@@ -158,32 +164,45 @@ def route_node(state: dict) -> dict:
             "icon": AGENT_ICONS.get(rk, "🤖"),
         })
 
-    logger.info(f"Routed to: {agent_keys}")
+    logger.info(f"Routed to: {agent_keys} | complexity: {complexity}")
+    if search_queries:
+        logger.info(f"LLM search queries: {search_queries}")
     return {
         "agent_keys": agent_keys,
         "agent_instances": agent_instances,
         "agent_info": agent_info,
+        "search_queries": search_queries,
+        "complexity": complexity,
     }
 
 
 def gather_context_node(state: dict) -> dict:
-    """Gather context from all routed agents (parallel where safe)."""
+    """Gather context from all routed agents (parallel where safe).
+    
+    Adaptive tool selection based on query complexity:
+    - simple: Skip deep research + web search, run only calculators + agent context
+    - moderate: Run all tools normally
+    - complex: Run all tools with higher search limits
+    """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     query = state["query"]
     agent_keys = state["agent_keys"]
     agent_instances = state["agent_instances"]
     session_files = state.get("session_files", [])
     profile = state.get("profile", {})
+    complexity = state.get("complexity", "moderate")
 
     t0 = time.time()
     all_contexts = []
 
     # ── Inject pre-cached market briefing (instant, no network call) ──
-    from tools.market_prefetch import get_market_briefing
-    prefetch_briefing = get_market_briefing()
-    if prefetch_briefing:
-        all_contexts.append(prefetch_briefing)
-        logger.info(f"Pre-cached market briefing: {len(prefetch_briefing)} chars")
+    # Skip for simple queries (greetings, pure calculations)
+    if complexity != "simple":
+        from tools.market_prefetch import get_market_briefing
+        prefetch_briefing = get_market_briefing()
+        if prefetch_briefing:
+            all_contexts.append(prefetch_briefing)
+            logger.info(f"Pre-cached market briefing: {len(prefetch_briefing)} chars")
 
     # ── Launch independent I/O tasks in parallel ──
     # smart_calc is CPU-only (~50ms), the rest are I/O-bound.
@@ -204,7 +223,10 @@ def gather_context_node(state: dict) -> dict:
 
     def _deep_research():
         from tools.deep_research import deep_research
-        return _timed("deep_research", lambda: deep_research(query, max_context_chars=5000))
+        sq = state.get("search_queries")  # LLM-generated queries from router
+        max_chars = 7000 if complexity == "complex" else 5000
+        return _timed("deep_research", lambda: deep_research(
+            query, max_context_chars=max_chars, search_queries=sq or None))
 
     def _agent_context(rk):
         ra = agent_instances[rk]
@@ -219,7 +241,11 @@ def gather_context_node(state: dict) -> dict:
     with ThreadPoolExecutor(max_workers=6, thread_name_prefix="gather") as pool:
         futures = {}
         futures[pool.submit(_smart_calc)] = "smart_calc"
-        futures[pool.submit(_deep_research)] = "deep_research"
+        # Skip deep research for simple queries (greetings, pure calculations)
+        if complexity != "simple":
+            futures[pool.submit(_deep_research)] = "deep_research"
+        else:
+            logger.info("Simple query — skipping deep research + web search")
         for rk in agent_keys:
             futures[pool.submit(_agent_context, rk)] = f"agent:{rk}"
 
@@ -429,10 +455,191 @@ def generate_response_node(state: dict) -> dict:
     }
 
 
+# ──────────────────────── Reflection Node ────────────────────────
+
+_REFLECTION_PROMPT = """You are a financial response quality checker. Review the response below and determine if it adequately addresses ALL parts of the user's query.
+
+User query: {query}
+
+Response to evaluate:
+{response}
+
+Check for:
+1. Does it address every sub-question or aspect the user asked about?
+2. Are concrete ₹ numbers provided where calculations were expected?
+3. Are actionable next steps included?
+4. Is any major topic completely missing?
+
+Return ONLY a JSON object:
+- "pass": true if the response is adequate, false if it needs improvement
+- "missing": brief description of what's missing (empty string if pass is true)
+
+Example: {{"pass": true, "missing": ""}}
+Example: {{"pass": false, "missing": "No comparison between old and new tax regime as asked"}}
+"""
+
+
+def reflect_node(state: dict) -> dict:
+    """Evaluate response quality for complex queries.
+    
+    Only runs for complex queries. Uses a lightweight LLM call to check
+    if the response covers all aspects of the user's question. If not,
+    provides feedback for a refinement pass.
+    """
+    complexity = state.get("complexity", "moderate")
+    response = state.get("response", "")
+    query = state.get("query", "")
+    
+    # Only reflect on complex queries — simple/moderate don't need it
+    if complexity != "complex":
+        logger.info(f"Skipping reflection (complexity={complexity})")
+        return {"reflection_pass": True, "refinement_needed": False}
+
+    # Don't reflect if already refined (prevent infinite loops)
+    if state.get("refinement_done"):
+        logger.info("Already refined once — skipping further reflection")
+        return {"reflection_pass": True, "refinement_needed": False}
+    
+    from llm.engine import llm
+    
+    try:
+        prompt = _REFLECTION_PROMPT.format(
+            query=query[:500],
+            response=response[:2000],  # Cap to avoid token overflow
+        )
+        
+        result = llm.model.create_chat_completion(
+            messages=[
+                {"role": "system", "content": "You are a precise JSON evaluator. Return ONLY valid JSON. /no_think"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.05,
+            max_tokens=150,
+        )
+        
+        raw = result["choices"][0]["message"]["content"].strip()
+        raw = re.sub(r'<think>.*?</think>\s*', '', raw, flags=re.DOTALL).strip()
+        
+        # Parse JSON
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        if start >= 0 and end > start:
+            parsed = json.loads(raw[start:end])
+            passed = parsed.get("pass", True)
+            missing = parsed.get("missing", "")
+            
+            if not passed and missing:
+                logger.info(f"Reflection FAILED: {missing}")
+                return {
+                    "reflection_pass": False,
+                    "refinement_needed": True,
+                    "reflection_feedback": missing,
+                }
+            else:
+                logger.info("Reflection PASSED — response is adequate")
+                return {"reflection_pass": True, "refinement_needed": False}
+        else:
+            logger.warning(f"Reflection returned non-JSON: {raw[:100]}")
+            return {"reflection_pass": True, "refinement_needed": False}
+            
+    except Exception as e:
+        logger.warning(f"Reflection failed: {e}")
+        return {"reflection_pass": True, "refinement_needed": False}
+
+
+def refine_node(state: dict) -> dict:
+    """Refine the response based on reflection feedback.
+    
+    Takes the original response + reflection feedback and asks the LLM
+    to improve the response to address missing aspects.
+    """
+    from llm.engine import llm
+    
+    feedback = state.get("reflection_feedback", "")
+    original_response = state.get("response", "")
+    query = state.get("query", "")
+    context = state.get("context", "")
+    system_prompt = state.get("system_prompt", "")
+    
+    refinement_prompt = (
+        f"{system_prompt}\n\n"
+        f"IMPORTANT: Your previous response was reviewed and found to be missing: {feedback}\n"
+        f"Please provide a COMPLETE improved response that addresses this gap.\n"
+        f"Build on your previous answer — don't start from scratch.\n"
+    )
+    
+    # Include the original response as context for refinement
+    augmented_context = (
+        f"{context}\n\n"
+        f"YOUR PREVIOUS RESPONSE (improve upon this):\n{original_response[:3000]}\n\n"
+        f"REVIEWER FEEDBACK: {feedback}"
+    )
+    
+    refined = llm.generate(
+        refinement_prompt,
+        query,
+        augmented_context,
+        state.get("history_messages", []),
+    )
+    
+    logger.info(f"Refined response: {len(refined)} chars (was {len(original_response)} chars)")
+    
+    # Update profile with refined response facts
+    profile = state.get("profile", {})
+    profile = extract_profile_facts(refined, profile)
+    
+    # Replace the response and mark refinement as done
+    past_exchanges = list(state.get("past_exchanges", []))
+    if past_exchanges and past_exchanges[-1].get("user") == query:
+        past_exchanges[-1]["assistant"] = refined
+    
+    return {
+        "response": refined,
+        "profile": profile,
+        "past_exchanges": past_exchanges,
+        "refinement_done": True,
+    }
+
+
+# ──────────────────────── Routing Functions ────────────────────────
+
+def _route_after_generate(state: dict) -> str:
+    """Decide whether to reflect on the response or go straight to END.
+    
+    Only complex queries go through reflection — simple/moderate skip it.
+    """
+    complexity = state.get("complexity", "moderate")
+    if complexity == "complex" and not state.get("refinement_done"):
+        return "reflect"
+    return "__end__"
+
+
+def _route_after_reflect(state: dict) -> str:
+    """Decide whether to refine the response or accept it.
+    
+    If reflection found gaps, route to refine node for improvement.
+    """
+    if state.get("refinement_needed"):
+        return "refine"
+    return "__end__"
+
+
 # ──────────────────────── Build the Graph ────────────────────────
 
 def build_graph(checkpointer=None):
-    """Build and compile the FinanceGPT LangGraph workflow."""
+    """Build and compile the FinanceGPT agentic workflow.
+    
+    Graph structure with conditional edges:
+    
+        START → route → gather_context → build_prompt → generate
+                                                            ↓
+                                              ┌─── (simple/moderate) ──→ END
+                                              │
+                                              └─── (complex) ──→ reflect
+                                                                    ↓
+                                                        ┌── (pass) ──→ END
+                                                        └── (fail) ──→ refine → END
+    """
     workflow = StateGraph(dict)
 
     # Add nodes
@@ -440,13 +647,29 @@ def build_graph(checkpointer=None):
     workflow.add_node("gather_context", gather_context_node)
     workflow.add_node("build_prompt", build_prompt_node)
     workflow.add_node("generate", generate_response_node)
+    workflow.add_node("reflect", reflect_node)
+    workflow.add_node("refine", refine_node)
 
-    # Define edges: linear pipeline
+    # Linear path: route → gather → build → generate
     workflow.add_edge(START, "route")
     workflow.add_edge("route", "gather_context")
     workflow.add_edge("gather_context", "build_prompt")
     workflow.add_edge("build_prompt", "generate")
-    workflow.add_edge("generate", END)
+
+    # Conditional: after generate → reflect (complex) or END (simple/moderate)
+    workflow.add_conditional_edges("generate", _route_after_generate, {
+        "reflect": "reflect",
+        "__end__": END,
+    })
+
+    # Conditional: after reflect → refine (if gaps found) or END (if adequate)
+    workflow.add_conditional_edges("reflect", _route_after_reflect, {
+        "refine": "refine",
+        "__end__": END,
+    })
+
+    # Refine always goes to END (max 1 refinement pass)
+    workflow.add_edge("refine", END)
 
     # Compile with checkpointer for session persistence
     return workflow.compile(checkpointer=checkpointer)
@@ -573,13 +796,101 @@ async def stream_workflow(
 
     response_text = "".join(full_response)
     inference_time = round(time.time() - t0, 2)
-    total_time = round(time.time() - pipeline_start, 2)
 
     timings["inference"] = inference_time
     timings["ttft"] = ttft or 0
     timings["tokens_out"] = token_count
     if inference_time > 0 and token_count > 0:
         timings["tokens_per_sec"] = round(token_count / inference_time, 1)
+
+    # ── Step 5: Reflection + Refinement (complex queries only) ──
+    complexity = input_state.get("complexity", "moderate")
+    if complexity == "complex":
+        yield {"event": "status", "data": {"step": "reflecting", "message": "Reviewing response quality..."}}
+        t_step = time.time()
+
+        # Build state for reflection
+        input_state["response"] = response_text
+        reflect_result = await asyncio.to_thread(reflect_node, input_state)
+        timings["reflection"] = round(time.time() - t_step, 2)
+        input_state.update(reflect_result)
+
+        if reflect_result.get("refinement_needed"):
+            feedback = reflect_result.get("reflection_feedback", "")
+            yield {"event": "status", "data": {
+                "step": "refining",
+                "message": f"Improving response: {feedback[:80]}..."
+            }}
+
+            # Stream the refined response (replaces the original)
+            t_refine = time.time()
+            refine_feedback = reflect_result.get("reflection_feedback", "")
+
+            refinement_prompt = (
+                f"{input_state['system_prompt']}\n\n"
+                f"IMPORTANT: Your previous response was reviewed and found to be missing: {refine_feedback}\n"
+                f"Please provide a COMPLETE improved response that addresses this gap.\n"
+                f"Build on your previous answer — don't start from scratch.\n"
+            )
+            augmented_context = (
+                f"{input_state['context']}\n\n"
+                f"YOUR PREVIOUS RESPONSE (improve upon this):\n{response_text[:3000]}\n\n"
+                f"REVIEWER FEEDBACK: {refine_feedback}"
+            )
+
+            # Clear previous tokens and stream refined response
+            yield {"event": "clear", "data": {}}
+            full_response = []
+            token_count = 0
+            ttft = None
+            t0_refine = time.time()
+            stream_error = [None]
+
+            token_queue_refine = queue.Queue()
+
+            def _run_refine_stream():
+                try:
+                    for token in llm.generate_stream(
+                        refinement_prompt,
+                        input_state["query"],
+                        augmented_context,
+                        input_state.get("history_messages", []),
+                    ):
+                        token_queue_refine.put(token)
+                    token_queue_refine.put(None)
+                except Exception as e:
+                    stream_error[0] = e
+                    token_queue_refine.put(None)
+
+            loop.run_in_executor(None, _run_refine_stream)
+
+            while True:
+                token = await asyncio.to_thread(token_queue_refine.get, True, 120.0)
+                if token is None:
+                    break
+                token_count += 1
+                if ttft is None:
+                    ttft = round(time.time() - t0_refine, 2)
+                full_response.append(token)
+                yield {"event": "token", "data": {"t": token}}
+
+            if stream_error[0]:
+                yield {"event": "error", "data": {"message": str(stream_error[0])}}
+                return
+
+            response_text = "".join(full_response)
+            timings["refinement"] = round(time.time() - t_refine, 2)
+            timings["inference"] = inference_time + timings["refinement"]
+            timings["ttft"] = ttft or 0
+            timings["tokens_out"] = token_count
+            timings["refined"] = True
+            if timings["refinement"] > 0 and token_count > 0:
+                timings["tokens_per_sec"] = round(token_count / timings["refinement"], 1)
+            logger.info(f"Refinement: {len(response_text)} chars in {timings['refinement']}s")
+        else:
+            logger.info(f"Reflection passed — no refinement needed ({timings['reflection']}s)")
+
+    total_time = round(time.time() - pipeline_start, 2)
     timings["total"] = total_time
 
     # Update profile with facts from this exchange
@@ -598,26 +909,31 @@ async def stream_workflow(
         updated_exchanges = updated_exchanges[-15:]
 
     # Save state to checkpoint
+    final_node = "refine" if timings.get("refined") else "generate"
     final_state = {
         "query": query,
         "profile": updated_profile,
         "past_exchanges": updated_exchanges,
         "agent_keys": input_state["agent_keys"],
         "response": response_text,
+        "complexity": input_state.get("complexity", "moderate"),
     }
     try:
-        await graph.aupdate_state(config, final_state, as_node="generate")
+        await graph.aupdate_state(config, final_state, as_node=final_node)
         logger.info(f"Checkpoint saved: session={session_id}, profile={len(updated_profile)} facts, "
                      f"exchanges={len(updated_exchanges)}")
     except Exception as e:
         logger.warning(f"Failed to save checkpoint: {e}")
 
     # Log timing summary BEFORE yielding done events (client may disconnect after done)
+    reflection_str = f" reflection={timings.get('reflection', 0)}s" if complexity == "complex" else ""
+    refinement_str = f" refinement={timings.get('refinement', 0)}s" if timings.get("refined") else ""
     logger.info(
         f"Pipeline timings: routing={timings['routing']}s context={timings['context_gathering']}s "
         f"prompt={timings['prompt_build']}s inference={timings['inference']}s "
         f"ttft={timings['ttft']}s tokens={token_count} "
-        f"tok/s={timings.get('tokens_per_sec','?')} total={total_time}s"
+        f"tok/s={timings.get('tokens_per_sec','?')} "
+        f"complexity={complexity}{reflection_str}{refinement_str} total={total_time}s"
     )
     logger.info(f"Context subtimings: {timings.get('context_subtimings', {})}")
 

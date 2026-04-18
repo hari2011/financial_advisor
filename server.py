@@ -44,6 +44,88 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # In-memory map: session_id -> [{filename, type, content, error}]
 _session_files: dict[str, list[dict]] = {}
 
+# ──────────────────────── Session metadata DB ────────────────────────
+import aiosqlite
+
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sessions", "session_meta.db")
+
+async def _init_session_db():
+    """Create session metadata table if it doesn't exist."""
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT 'New conversation',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                message_count INTEGER NOT NULL DEFAULT 0,
+                saved INTEGER NOT NULL DEFAULT 1
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS session_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                file_type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+            )
+        """)
+        await db.commit()
+
+
+async def _upsert_session(session_id: str, title: str = None, msg_count_delta: int = 0):
+    """Create or update session metadata."""
+    now = time.time()
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await db.execute_fetchall(
+            "SELECT title, message_count FROM sessions WHERE session_id = ?",
+            (session_id,)
+        )
+        if row:
+            existing_title, existing_count = row[0]
+            new_title = title if title else existing_title
+            new_count = existing_count + msg_count_delta
+            await db.execute(
+                "UPDATE sessions SET title = ?, updated_at = ?, message_count = ? WHERE session_id = ?",
+                (new_title, now, new_count, session_id)
+            )
+        else:
+            await db.execute(
+                "INSERT INTO sessions (session_id, title, created_at, updated_at, message_count) VALUES (?, ?, ?, ?, ?)",
+                (session_id, title or "New conversation", now, now, max(msg_count_delta, 0))
+            )
+        await db.commit()
+
+
+async def _save_session_files(session_id: str, files: list[dict]):
+    """Persist uploaded files to DB for a session."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        for f in files:
+            # Check if already stored (avoid duplicates)
+            existing = await db.execute_fetchall(
+                "SELECT id FROM session_files WHERE session_id = ? AND filename = ?",
+                (session_id, f.get("filename", ""))
+            )
+            if not existing:
+                await db.execute(
+                    "INSERT INTO session_files (session_id, filename, file_type, content) VALUES (?, ?, ?, ?)",
+                    (session_id, f.get("filename", ""), f.get("type", ""), f.get("content", ""))
+                )
+        await db.commit()
+
+
+async def _load_session_files(session_id: str) -> list[dict]:
+    """Load persisted files for a session from DB."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await db.execute_fetchall(
+            "SELECT filename, file_type, content FROM session_files WHERE session_id = ?",
+            (session_id,)
+        )
+        return [{"filename": r[0], "type": r[1], "content": r[2]} for r in rows]
+
 
 # ──────────────────────── LangGraph Workflow ────────────────────────
 from graph.workflow import build_graph, stream_workflow
@@ -67,6 +149,9 @@ async def lifespan(app: FastAPI):
     # Initialize LangGraph checkpointer + graph
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sessions", "checkpoints.db")
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
+    # Initialize session metadata DB
+    await _init_session_db()
 
     async with AsyncSqliteSaver.from_conn_string(db_path) as checkpointer:
         graph = build_graph(checkpointer=checkpointer)
@@ -183,6 +268,7 @@ async def chat(request: Request):
     query = body.get("query", "").strip()
     agent_key = body.get("agent", "auto")
     session_id = body.get("session_id", None)
+    save_conversation = body.get("save_conversation", True)
 
     if not query:
         return JSONResponse({"error": "Empty query"}, status_code=400)
@@ -192,7 +278,13 @@ async def chat(request: Request):
         session_id = uuid.uuid4().hex[:16]
 
     graph = request.app.state.graph
+
+    # Load files from in-memory first, then DB fallback (for restored sessions)
     session_files = _session_files.get(session_id, [])
+    if not session_files:
+        session_files = await _load_session_files(session_id)
+        if session_files:
+            _session_files[session_id] = session_files
 
     async def event_stream():
         def send_event(event: str, data: dict):
@@ -215,6 +307,17 @@ async def chat(request: Request):
         except Exception as e:
             logger.error(f"Workflow error: {e}")
             yield send_event("error", {"message": str(e)})
+
+        # After streaming completes, save session metadata
+        if save_conversation:
+            # Auto-title from first message (first 60 chars, clean)
+            title = query[:60].strip()
+            if len(query) > 60:
+                title = title.rsplit(' ', 1)[0] + '...'
+            await _upsert_session(session_id, title=title, msg_count_delta=1)
+            # Persist uploaded files to DB
+            if session_files:
+                await _save_session_files(session_id, session_files)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -266,8 +369,78 @@ async def health():
 async def clear_session(session_id: str):
     """Clear conversation history and uploaded files for a session."""
     _session_files.pop(session_id, None)
+    # Remove from metadata DB
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM session_files WHERE session_id = ?", (session_id,))
+        await db.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+        await db.commit()
     logger.info(f"Session cleared: {session_id}")
     return {"status": "ok"}
+
+
+# ──────────────────────── Session History API ────────────────────────
+
+@app.get("/api/sessions")
+async def list_sessions():
+    """List all saved conversation sessions, most recent first."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await db.execute_fetchall(
+            "SELECT session_id, title, created_at, updated_at, message_count "
+            "FROM sessions WHERE saved = 1 ORDER BY updated_at DESC LIMIT 50"
+        )
+    return [
+        {
+            "session_id": r[0],
+            "title": r[1],
+            "created_at": r[2],
+            "updated_at": r[3],
+            "message_count": r[4],
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: str, request: Request):
+    """Restore a conversation session — returns past exchanges from checkpoint."""
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": session_id}}
+
+    try:
+        snapshot = await graph.aget_state(config)
+        if not snapshot or not snapshot.values:
+            return JSONResponse({"error": "Session not found"}, status_code=404)
+
+        state = snapshot.values
+        past_exchanges = state.get("past_exchanges", [])
+        profile = state.get("profile", {})
+
+        return {
+            "session_id": session_id,
+            "exchanges": past_exchanges,
+            "profile": profile,
+        }
+    except Exception as e:
+        logger.error(f"Failed to restore session {session_id}: {e}")
+        return JSONResponse({"error": "Failed to restore session"}, status_code=500)
+
+
+@app.patch("/api/sessions/{session_id}")
+async def rename_session(session_id: str, request: Request):
+    """Rename a conversation session."""
+    body = await request.json()
+    new_title = body.get("title", "").strip()
+    if not new_title:
+        return JSONResponse({"error": "Title cannot be empty"}, status_code=400)
+    # Sanitize title
+    new_title = new_title[:100]
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE sessions SET title = ?, updated_at = ? WHERE session_id = ?",
+            (new_title, time.time(), session_id)
+        )
+        await db.commit()
+    return {"status": "ok", "title": new_title}
 
 
 # ──────────────────────── Main ────────────────────────

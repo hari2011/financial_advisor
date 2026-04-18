@@ -1,7 +1,11 @@
-"""Web search tools using DuckDuckGo (no API key needed).
+"""Web search tools using DuckDuckGo (API + HTML fallback).
 
-Includes retry logic with exponential backoff to handle 403 rate-limits,
-a thread-safe rate limiter, result caching, and cooldown between requests.
+Primary: DDGS library (API-based, fast).
+Fallback: html.duckduckgo.com scraping when API returns 403/rate-limit.
+
+No external API keys or services required — just requests + BeautifulSoup.
+Includes retry logic with exponential backoff, thread-safe rate limiting,
+result caching, and cooldown between requests.
 """
 import re
 import time
@@ -9,6 +13,10 @@ import random
 import logging
 import hashlib
 import threading
+from urllib.parse import urlparse, parse_qs, unquote
+
+import requests
+from bs4 import BeautifulSoup
 from ddgs import DDGS
 
 logger = logging.getLogger("financegpt.tools.web")
@@ -16,7 +24,23 @@ logger = logging.getLogger("financegpt.tools.web")
 # ── Thread-safe rate limiter: enforce minimum gap between DuckDuckGo requests ──
 _ddgs_lock = threading.Lock()
 _last_request_ts: float = 0.0
-_MIN_REQUEST_GAP: float = 0.3  # seconds between requests (DuckDuckGo handles moderate concurrency)
+_MIN_REQUEST_GAP: float = 0.5  # seconds between requests
+_MIN_NEWS_GAP: float = 1.75   # news.js endpoint is rate-limited more aggressively
+_last_news_ts: float = 0.0
+_news_lock = threading.Lock()
+
+# ── Shared DDGS client (reuse session to avoid triggering rate limits) ──
+_ddgs_client = None
+_ddgs_client_lock = threading.Lock()
+
+
+def _get_ddgs_client():
+    """Return the shared DDGS client, creating it on first use (thread-safe)."""
+    global _ddgs_client
+    with _ddgs_client_lock:
+        if _ddgs_client is None:
+            _ddgs_client = DDGS()
+        return _ddgs_client
 
 # ── Simple result cache (avoid re-fetching identical queries) ──
 _cache_lock = threading.Lock()
@@ -28,15 +52,26 @@ _world_briefing_cache: dict = {"text": "", "ts": 0}
 _briefing_lock = threading.Lock()
 
 
-def _rate_limit():
-    """Enforce minimum gap between DuckDuckGo requests (thread-safe)."""
-    global _last_request_ts
+def _rate_limit(is_news: bool = False):
+    """Enforce minimum gap between DuckDuckGo requests (thread-safe).
+    News endpoint gets a longer gap since news.js is rate-limited more aggressively.
+    """
+    global _last_request_ts, _last_news_ts
+    # Always enforce the base gap
     with _ddgs_lock:
         elapsed = time.time() - _last_request_ts
         if elapsed < _MIN_REQUEST_GAP:
             sleep_time = _MIN_REQUEST_GAP - elapsed + random.uniform(0.1, 0.5)
             time.sleep(sleep_time)
         _last_request_ts = time.time()
+    # News gets an additional, stricter gap
+    if is_news:
+        with _news_lock:
+            elapsed = time.time() - _last_news_ts
+            if elapsed < _MIN_NEWS_GAP:
+                sleep_time = _MIN_NEWS_GAP - elapsed + random.uniform(0.3, 1.0)
+                time.sleep(sleep_time)
+            _last_news_ts = time.time()
 
 
 def _cache_key(func_name: str, query: str) -> str:
@@ -62,11 +97,72 @@ def _set_cached(key: str, result):
             del _search_cache[oldest_key]
 
 
+def _ddg_html_fallback(query: str, max_results: int = 5) -> list:
+    """Scrape html.duckduckgo.com as fallback when DDGS API returns 403.
+
+    Returns DDGS-compatible result dicts with title, body, href.
+    Uses the HTML-only version of DuckDuckGo which is more resilient
+    to rate-limiting than the API endpoints.
+    """
+    try:
+        resp = requests.post(
+            "https://html.duckduckgo.com/html/",
+            data={"q": query, "b": ""},
+            headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                              "Chrome/120.0.0.0 Safari/537.36",
+                "Referer": "https://html.duckduckgo.com/",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+        results = []
+
+        for link in soup.find_all("a", class_="result__a"):
+            raw_href = link.get("href", "")
+            # Extract actual URL from DDG redirect (?uddg=...)
+            if "uddg=" in raw_href:
+                parsed = parse_qs(urlparse(raw_href).query)
+                url = unquote(parsed.get("uddg", [""])[0])
+            else:
+                url = raw_href
+
+            if not url or not url.startswith("http"):
+                continue
+
+            title = link.get_text(strip=True)
+            # Get snippet from the next sibling snippet element
+            snippet_el = link.find_next("a", class_="result__snippet")
+            snippet = snippet_el.get_text(strip=True) if snippet_el else ""
+
+            results.append({
+                "title": title,
+                "body": snippet,
+                "href": url,
+            })
+            if len(results) >= max_results:
+                break
+
+        if results:
+            logger.info(f"DDG HTML fallback: {len(results)} results for '{query[:50]}'")
+        return results
+
+    except Exception as e:
+        logger.warning(f"DDG HTML fallback failed: {e}")
+        return []
+
+
 def _ddgs_with_retry(func_name: str, query: str, max_results: int = 5,
                      max_retries: int = 3) -> list:
-    """Execute a DDGS search with retry + exponential backoff.
+    """Search DuckDuckGo with API-first, HTML-fallback strategy.
 
     func_name: 'text' or 'news'
+    1. Check cache
+    2. Try DDGS API with retry + exponential backoff
+    3. If API fails (403/rate-limit), fall back to html.duckduckgo.com
     Returns list of result dicts, or empty list on failure.
     """
     ck = _cache_key(func_name, f"{query}:{max_results}")
@@ -74,22 +170,34 @@ def _ddgs_with_retry(func_name: str, query: str, max_results: int = 5,
     if cached is not None:
         return cached
 
+    # Primary: DDGS API with retry (shared client avoids per-call session overhead)
+    global _ddgs_client
+    is_news = func_name == "news"
     for attempt in range(max_retries):
         try:
-            _rate_limit()
-            with DDGS() as ddgs:
-                fn = getattr(ddgs, func_name)
-                results = list(fn(query, max_results=max_results))
+            _rate_limit(is_news=is_news)
+            client = _get_ddgs_client()
+            fn = getattr(client, func_name)
+            results = list(fn(query, max_results=max_results))
             if results:
                 _set_cached(ck, results)
             return results
         except Exception as e:
             err_str = str(e).lower()
             is_rate_limit = "403" in err_str or "ratelimit" in err_str
+            is_server_error = "500" in err_str or "502" in err_str or "503" in err_str
             is_decode = "decode" in err_str
             is_timeout = "timeout" in err_str
 
-            if is_rate_limit or is_decode or is_timeout:
+            if is_rate_limit or is_server_error or is_decode or is_timeout:
+                # Recreate client on connection/session errors
+                with _ddgs_client_lock:
+                    _ddgs_client = None
+                # For news 403s, skip remaining retries — the news.js endpoint
+                # won't unblock within seconds; go straight to HTML fallback
+                if is_news and (is_rate_limit or is_server_error):
+                    logger.info(f"DDGS news {err_str[:30]}, skipping retries → HTML fallback")
+                    break
                 wait = (2 ** attempt) + random.uniform(0.5, 2.0)
                 logger.warning(
                     f"DDGS {func_name} attempt {attempt+1}/{max_retries} "
@@ -98,8 +206,22 @@ def _ddgs_with_retry(func_name: str, query: str, max_results: int = 5,
                 time.sleep(wait)
             else:
                 logger.error(f"DDGS {func_name} non-retryable error: {e}")
-                return []
-    logger.error(f"DDGS {func_name} failed after {max_retries} retries for: {query[:60]}")
+                break  # Don't retry non-retryable errors, try HTML fallback
+
+    # Fallback: DDG HTML scraping (works when API is rate-limited)
+    logger.info(f"DDGS API exhausted, trying HTML fallback for: {query[:50]}")
+    search_query = f"{query} news" if func_name == "news" else query
+    results = _ddg_html_fallback(search_query, max_results)
+    if results:
+        # For news-mode callers, remap href → url and add source
+        if func_name == "news":
+            for r in results:
+                r["url"] = r.pop("href", "")
+                r["source"] = urlparse(r.get("url", "")).netloc.replace("www.", "")
+        _set_cached(ck, results)
+        return results
+
+    logger.error(f"Both DDGS API and HTML fallback failed for: {query[:60]}")
     return []
 _BRIEFING_TTL = 3600  # 1 hour
 

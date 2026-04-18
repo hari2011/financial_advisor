@@ -1,6 +1,6 @@
-# 💹 FinanceGPT — AI Personal Financial Advisor
+# 💹 FinanceGPT — Agentic AI Financial Advisor
 
-A **100% local, privacy-first** AI financial advisor powered by **Qwen3-8B** (via llama-cpp-python) and **LangGraph**, tailored for the **Indian market**. Runs on **macOS, Linux, and Windows** with automatic hardware detection and optimization.
+A **100% local, privacy-first** agentic AI financial advisor powered by **Qwen3-8B** (via llama-cpp-python) and **LangGraph**, tailored for the **Indian market**. Runs on **macOS, Linux, and Windows** with automatic hardware detection and optimization.
 
 All processing happens on your machine — your financial data never leaves your computer.
 
@@ -10,8 +10,11 @@ All processing happens on your machine — your financial data never leaves your
 
 ### AI & LLM
 - **Qwen3-8B Q5_K_M** — 5-bit quantized (5.5 GB), runs locally via llama-cpp-python
-- **10 specialist AI agents** — auto-routed via LLM classifier + keyword fallback
-- **LangGraph pipeline** — declarative state graph: `route → gather_context → build_prompt → stream_llm`
+- **10 specialist AI agents** — auto-routed via LLM classifier with agent dependency graph
+- **Agentic LangGraph pipeline** — conditional edges, self-reflection, and adaptive tool selection
+- **Query complexity classification** — LLM classifies queries as simple/moderate/complex to optimize the pipeline path
+- **Self-reflection loop** — complex queries trigger automatic response quality evaluation and refinement
+- **Adaptive context gathering** — simple queries skip expensive web search; complex queries get deeper research
 - **Multi-agent collaboration** — complex queries route to multiple agents for a unified answer
 - **Qwen3 non-thinking mode** — `/no_think` for fast, direct responses without chain-of-thought overhead
 
@@ -213,7 +216,7 @@ Open **http://localhost:8501** in your browser. The app auto-detects your hardwa
 | **Insurance Advisor** | 🛡️ | Term life, health insurance, IRDAI plans, claim settlement ratios |
 | **General Advisor** | 🧠 | Catch-all financial guidance with web search |
 
-Queries are **automatically routed** to the best agent(s). Multi-agent queries (e.g., "Should I prepay my home loan or invest in mutual funds?") route to multiple agents and produce a unified response.
+Queries are **autonomously routed** by the LLM to the best agent(s) based on intent analysis and an agent dependency graph. Multi-agent queries (e.g., "Should I prepay my home loan or invest in mutual funds?") route to multiple agents, and complex queries trigger automatic self-reflection to ensure comprehensive coverage.
 
 ---
 
@@ -286,39 +289,61 @@ Formulas are cross-referenced against Groww, ClearTax, ET Money, India Post, and
 
 ## 🏗️ Architecture
 
+### Agentic Design Philosophy
+
+FinanceGPT implements a **hybrid agentic architecture** — combining autonomous LLM decision-making with deterministic financial computation. This is a deliberate design choice: financial calculations must be **exact and reproducible** (SIP of ₹10K/month at 12% for 20 years = ₹99,91,479, every time), while the reasoning layer around them benefits from adaptive intelligence.
+
+**Why not fully autonomous agents?** In finance, a fully autonomous agent (ReAct-style) might decide to skip a tax calculation it deems "unnecessary," or compute SIP differently each time. That's dangerous when users make investment decisions based on the output. FinanceGPT separates **what to compute** (agentic, LLM-driven) from **how to compute** (deterministic, formula-verified), giving you the intelligence of an agent with the reliability of a calculator.
+
+### LangGraph Pipeline with Conditional Edges
+
 ```
 User Query
     ↓
-┌─────────────────────────────────────────────────────────┐
-│  LangGraph Pipeline (SQLite Checkpointing)              │
-│                                                         │
-│  START → route → gather_context → build_prompt → stream │
-│            ↓           ↓                ↓          ↓    │
-│        LLM-based   ThreadPool      Token budget   SSE   │
-│        classifier  (6 workers)     trimming     tokens  │
-│        + keyword    ┌──────┐                            │
-│        fallback     │market│                            │
-│                     │web   │                            │
-│                     │deep  │                            │
-│                     │calc  │                            │
-│                     └──────┘                            │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│  LangGraph Agentic Pipeline (SQLite Checkpointing)                     │
+│                                                                        │
+│  START → route ─→ gather_context ─→ build_prompt ─→ generate           │
+│           ↓              ↓                              ↓              │
+│     LLM classifies   Adaptive                  ┌── simple/moderate ─→ END
+│     agents +         tool selection:            │                       │
+│     complexity +     • simple: calcs only       └── complex ──┐        │
+│     search queries   • moderate: + web search                 ↓        │
+│                      • complex: + deep research          reflect       │
+│                                                              ↓         │
+│                                                    ┌── pass ────→ END  │
+│                                                    └── fail ──┐        │
+│                                                               ↓        │
+│                                                           refine → END │
+└──────────────────────────────────────────────────────────────────────────┘
     ↓
-  FastAPI SSE → Browser (index.html)
+  FastAPI SSE → Browser
 ```
 
-### Key Architectural Decisions
+### Agentic Capabilities
 
-| Decision | Rationale |
-|----------|-----------|
-| **Singleton LLM** | One `Llama` instance reused — enables KV cache prefix sharing |
-| **KV cache Q8 quantization** | Halves KV memory (~1 GB saved at 24K ctx) with <0.1% quality loss |
-| **Flash attention** | Faster prefill on Metal/CUDA, lower peak memory |
-| **Calculator result cache** | Pure functions — deterministic, safe to cache with TTL |
-| **Response cache** | Exact message hash → cached response (streaming bypasses cache by design) |
-| **Parallel context** | Market data, web search, deep research, agents all gather simultaneously |
-| **Token budget trimming** | Knowledge base → history → context trimmed in priority order |
-| **Profile extraction** | Regex-based financial fact extraction from conversation (age, income, EMI, goals) |
+| Capability | How It Works |
+|-----------|--------------|
+| **Autonomous Agent Selection** | LLM analyzes query intent and selects 1-3 specialist agents from 10 available, using an agent dependency graph that models inter-relationships, calculators, and context needs |
+| **Query Complexity Classification** | LLM classifies each query as `simple`, `moderate`, or `complex` — determining the pipeline path, tool invocation depth, and whether reflection is needed |
+| **Adaptive Tool Selection** | Simple queries (greetings, pure calculations) skip web search entirely; moderate queries get standard context; complex queries get deeper research with higher limits |
+| **LLM-Generated Search Queries** | The router generates tailored web search queries based on the selected agents' context needs — not generic keywords, but targeted information retrieval |
+| **Self-Reflection Loop** | Complex queries trigger a post-generation quality check: a lightweight LLM evaluates whether all aspects of the query were addressed |
+| **Automatic Refinement** | If reflection detects gaps (e.g., "no comparison between old and new tax regime as asked"), the LLM generates an improved response incorporating the feedback |
+| **Conditional Graph Edges** | The pipeline uses `add_conditional_edges()` — after generation, the graph dynamically routes to reflection, refinement, or directly to END based on query complexity and response quality |
+| **Agent Dependency Graph** | 10 agents with explicit `depends_on`, `calculators`, and `context_needs` — enabling intelligent routing that understands which agents handle connected topics |
+| **Session Memory** | Profile facts (income, age, risk appetite, goals) are extracted from conversations and persist across sessions via SQLite checkpointing |
+
+### Deterministic Financial Engine
+
+The agentic layer decides **what** to compute; the financial engine guarantees **accuracy**:
+
+| Component | Role | Why Deterministic? |
+|-----------|------|-------------------|
+| **36 Calculators** | SIP, EMI, FD, PPF, NPS, FIRE, CTC, tax — all verified | Financial math must be exact: ₹1 difference in a 20-year projection = wrong advice |
+| **Smart Dispatcher** | Auto-detects computation needs from natural language | Regex-based extraction ensures every number in the query gets processed |
+| **Pre-computed Context** | Calculators run before LLM generates response | LLM cites pre-computed ₹ values — never hallucinates numbers |
+| **Cross-Referencing** | 53 test cases verified against Groww, ClearTax, ET Money, India Post | Production financial platforms as ground truth |
 
 ---
 
@@ -426,14 +451,14 @@ financial_advisor/
 ├── test_cross_ref.py           # 53 calculator accuracy tests (Groww/ClearTax verified)
 │
 ├── graph/
-│   └── workflow.py             # LangGraph pipeline (route → context → prompt → stream)
+│   └── workflow.py             # LangGraph agentic pipeline (conditional edges, reflection, refinement)
 │
 ├── llm/
 │   └── engine.py               # LLM engine — KV Q8 cache, flash attn, response cache
 │
 ├── agents/
 │   ├── base.py                 # Base agent class with auto market data + web search
-│   ├── router.py               # LLM-based query router with agent relationship graph
+│   ├── router.py               # LLM-based query router with complexity classification & agent graph
 │   ├── stock_analyst.py        # NSE/BSE stock analysis + fundamentals
 │   ├── mutual_fund_advisor.py  # Indian mutual fund recommendations
 │   ├── portfolio_manager.py    # Portfolio allocation + rebalancing
@@ -692,4 +717,4 @@ This project is for personal use. The Qwen3 model is released under the [Apache 
 
 ---
 
-*Built with ❤️ for Indian investors. Powered by Qwen3-8B + llama-cpp-python + LangGraph + FastAPI.*
+*Built with ❤️ for Indian investors. Powered by Qwen3-8B + llama-cpp-python + LangGraph + FastAPI. Agentic architecture with deterministic financial accuracy.*

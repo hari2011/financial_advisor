@@ -94,7 +94,9 @@ def _run_prefetch():
     logger.info("Market pre-fetch starting...")
 
     categories = {}
-    with ThreadPoolExecutor(max_workers=5, thread_name_prefix="prefetch") as pool:
+    # Use max 2 workers — DDG's news.js endpoint aggressively rate-limits
+    # concurrent requests, even with per-call rate limiting in web_search.
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="prefetch") as pool:
         futures = {
             pool.submit(_fetch_category, key, spec): key
             for key, spec in _STANDARD_QUERIES.items()
