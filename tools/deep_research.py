@@ -44,12 +44,16 @@ _RESEARCH_CACHE_TTL: int = 600  # 10 minutes
 # ─────────────────────────────────────────────────────────────────
 
 def decompose_query(query: str) -> list[str]:
-    """Break a user question into 2-3 focused search sub-queries.
+    """Break a user question into 1-2 focused search sub-queries.
 
     Uses rule-based decomposition (fast, no LLM call needed):
-    - Base query (cleaned)
-    - Financial/analytical angle
-    - Recent news angle
+    - Base query: direct factual search
+    - Domain-specific angle (analysis/rules/comparison)
+
+    NOTE: "latest news" sub-query removed — standard market news is now
+    pre-fetched hourly by market_prefetch.py and injected into context.
+    This reduces DuckDuckGo calls from 3 to 2, cutting deep_research
+    latency by ~30% and avoiding rate-limit failures on news queries.
     """
     base = query_to_search(query, "")
     if not base or len(base.split()) < 2:
@@ -60,7 +64,7 @@ def decompose_query(query: str) -> list[str]:
     # Sub-query 1: Direct factual search
     sub_queries.append(f"{base} India 2025 2026")
 
-    # Sub-query 2: Analysis/opinion angle
+    # Sub-query 2: Domain-specific analysis angle
     q_lower = query.lower()
     if any(w in q_lower for w in ["stock", "share", "invest", "buy", "sell", "nifty", "sensex"]):
         sub_queries.append(f"{base} analysis outlook forecast")
@@ -73,10 +77,7 @@ def decompose_query(query: str) -> list[str]:
     else:
         sub_queries.append(f"{base} expert analysis India")
 
-    # Sub-query 3: Recent news
-    sub_queries.append(f"{base} latest news today")
-
-    return sub_queries[:3]
+    return sub_queries[:2]
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -387,7 +388,7 @@ def _format_cited_context(sources: list[dict]) -> str:
 # ─────────────────────────────────────────────────────────────────
 
 def deep_research(query: str, max_context_chars: int = 5000) -> str:
-    """Perform Gemini/Perplexity-style deep web research.
+    """Performs deep web research.
 
     Steps:
       1. Decompose query into 2-3 sub-queries

@@ -178,6 +178,13 @@ def gather_context_node(state: dict) -> dict:
     t0 = time.time()
     all_contexts = []
 
+    # ── Inject pre-cached market briefing (instant, no network call) ──
+    from tools.market_prefetch import get_market_briefing
+    prefetch_briefing = get_market_briefing()
+    if prefetch_briefing:
+        all_contexts.append(prefetch_briefing)
+        logger.info(f"Pre-cached market briefing: {len(prefetch_briefing)} chars")
+
     # ── Launch independent I/O tasks in parallel ──
     # smart_calc is CPU-only (~50ms), the rest are I/O-bound.
     # LLM calls are NOT made here, so thread-safety is fine.
@@ -194,10 +201,6 @@ def gather_context_node(state: dict) -> dict:
     def _smart_calc():
         from tools.smart_calc import smart_calculate
         return _timed("smart_calc", lambda: smart_calculate(query, profile))
-
-    def _world_briefing():
-        from tools.web_search import get_world_briefing
-        return _timed("web_briefing", lambda: get_world_briefing())
 
     def _deep_research():
         from tools.deep_research import deep_research
@@ -216,7 +219,6 @@ def gather_context_node(state: dict) -> dict:
     with ThreadPoolExecutor(max_workers=6, thread_name_prefix="gather") as pool:
         futures = {}
         futures[pool.submit(_smart_calc)] = "smart_calc"
-        futures[pool.submit(_world_briefing)] = "briefing"
         futures[pool.submit(_deep_research)] = "deep_research"
         for rk in agent_keys:
             futures[pool.submit(_agent_context, rk)] = f"agent:{rk}"
@@ -224,7 +226,6 @@ def gather_context_node(state: dict) -> dict:
         deep_research_result = None
         for future in as_completed(futures):
             tag = futures[future]
-            task_time = subtimings.get(tag, subtimings.get(f"agent:{tag}", "?"))
             try:
                 result = future.result()
                 if result:
@@ -234,14 +235,11 @@ def gather_context_node(state: dict) -> dict:
                     elif tag == "smart_calc":
                         all_contexts.append(result)
                         logger.info(f"[{subtimings.get('smart_calc','?')}s] Smart calc: {len(result)} chars")
-                    elif tag == "briefing":
-                        all_contexts.append(result)
-                        logger.info(f"[{subtimings.get('web_briefing','?')}s] World briefing: {len(result)} chars")
                     else:
                         all_contexts.append(result)
                         logger.info(f"[{subtimings.get(tag,'?')}s] {tag}: {len(result)} chars")
                 else:
-                    logger.info(f"[{subtimings.get(tag, subtimings.get(tag.replace('agent:','agent:'),'?'))}s] {tag}: no data")
+                    logger.info(f"[{subtimings.get(tag, '?')}s] {tag}: no data")
             except Exception as e:
                 logger.warning(f"{tag} failed: {e}")
 
@@ -299,7 +297,16 @@ def build_prompt_node(state: dict) -> dict:
         "OUTPUT STYLE: The user may not be a financial expert. Explain key concepts clearly "
         "so they understand WHY, not just WHAT. Use bullet points and tables for data. "
         "₹ in Lakhs/Crores. Stay focused on the core question — no generic greetings, "
-        "no motivational filler, no repeating the question back. End with clear actionable next steps.\n\n"
+        "no motivational filler, no repeating the question back. End with clear actionable next steps.\n"
+        "MISSING INFORMATION: If the user's query requires specific financial details that are NOT "
+        "provided and NOT available in the context/profile (e.g., income, age, city, rent, existing "
+        "investments, family size, loan details), DO NOT silently assume values. Instead:\n"
+        "1. Point out what information is missing and why it matters for accurate advice.\n"
+        "2. Provide a PRELIMINARY answer using clearly labeled assumptions (e.g., 'Assuming metro city, "
+        "₹25K rent, no existing 80C investments...').\n"
+        "3. End with specific questions asking the user to provide the missing details for a more "
+        "accurate computation. Format each question on its own line starting with '→'.\n"
+        "Example: '→ What is your monthly rent? (needed for HRA exemption calculation)'\n\n"
     )
 
     # Build system prompt

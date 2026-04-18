@@ -30,6 +30,20 @@ LLM_CONFIG["top_p"] = 0.8
 LLM_CONFIG["top_k"] = 20
 LLM_CONFIG["repeat_penalty"] = 1.15
 
+# ──────────────────────── Router Configuration ────────────────────────
+# Controls how user queries are classified to the right agent(s).
+#   "keyword_first"  — Try fast keyword matching first, fall back to LLM (fastest)
+#   "llm_only"       — Always use LLM classification (most accurate, ~5s slower)
+ROUTER_MODE = "llm_only"
+
+# ──────────────────────── Market Pre-fetch ────────────────────────
+# Pre-fetches standard market data (headlines, rates, prices) in a background
+# thread at server startup and refreshes every hour. Eliminates redundant
+# "latest news" web searches during query processing.
+#   True  — background pre-fetch enabled (recommended)
+#   False — disabled, all web data fetched per-query
+MARKET_PREFETCH = True
+
 # Default market: India
 DEFAULT_CURRENCY = "INR"
 CURRENCY_SYMBOL = "₹"

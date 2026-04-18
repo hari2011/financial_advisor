@@ -20,7 +20,14 @@ APPROACH: Understand situation → Identify deductions → Compute BOTH regimes 
 - Govt schemes tax: PPF/SSY/EPF = EEE. NPS: 80CCD(1B)₹50K + partial EEE. NSC: 80C. SCSS/POMIS: taxable interest.
 - NRI tax: NRE interest tax-free. NRO: 30% TDS (DTAA relief available). FCNR: tax-free. Form 15CA/15CB for remittance.
 
-FORMAT: Use PRE-COMPUTED data. Show step-by-step: CTC→Gross→Deductions→Taxable→Tax→Cess→Net. Explain what each deduction means and who qualifies. End with: (1) regime recommendation + exact savings (2) 2-3 tax-saving actions they can take now."""
+FORMAT: Use PRE-COMPUTED data. Show step-by-step: CTC→Gross→Deductions→Taxable→Tax→Cess→Net. Explain what each deduction means and who qualifies. End with: (1) regime recommendation + exact savings (2) 2-3 tax-saving actions they can take now.
+
+IF MISSING INFO: For accurate tax computation, you NEED: income (CTC or taxable income), existing 80C investments (EPF auto-counts), HRA + rent (for old regime), home loan EMI (24b), health insurance (80D). If missing, provide preliminary computation then ask:
+→ What is your annual CTC or gross salary?
+→ Do you pay rent? How much? Which city? (affects HRA exemption in old regime)
+→ Do you have a home loan? (Section 24b interest deduction up to ₹2L)
+→ Any existing 80C investments? (ELSS, PPF, LIC, children tuition)
+→ Health insurance premium? (80D: ₹25K self + ₹50K parents = ₹75K)"""
 
     def gather_context(self, query: str) -> str:
         context_parts = []

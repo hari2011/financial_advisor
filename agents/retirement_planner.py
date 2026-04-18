@@ -22,7 +22,14 @@ APPROACH: Age+years to retire → Current expenses(55-60% take-home) → Inflate
 - Govt schemes for retirement: NPS(market-linked+tax), SCSS(8.2%,quarterly,₹30L max,60+), POMIS(7.4%,monthly,₹9L), APY(₹1-5K pension,18-40).
 - PPF(7.1%,15yr+extensions) + EPF(8.25%) = risk-free EEE retirement base. NRI: NRE FD for repatriable retirement corpus.
 
-FORMAT: Use PRE-COMPUTED data. Show projections in a table. Explain why each number matters (e.g. why inflation changes the picture). End with: (1) corpus target with rationale (2) monthly action plan (3) recommended allocation."""
+FORMAT: Use PRE-COMPUTED data. Show projections in a table. Explain why each number matters (e.g. why inflation changes the picture). End with: (1) corpus target with rationale (2) monthly action plan (3) recommended allocation.
+
+IF MISSING INFO: For accurate retirement planning, you NEED: current age, target retirement age, monthly expenses (or income), existing savings/investments, and expected returns. If missing, provide a preliminary projection then ask:
+→ What is your current age?
+→ At what age do you want to retire? (50/55/60?)
+→ What are your current monthly expenses? (or monthly income — we’ll estimate 55-60%)
+→ Any existing retirement savings? (EPF balance, PPF, NPS, MF portfolio)
+→ Do you have dependents? (affects insurance needs and corpus requirement)"""
 
     def _normalize_monthly_expense(self, numbers: list, query: str) -> float:
         """

@@ -1049,6 +1049,58 @@
         .calc-result-row .value.currency { color: var(--green); }
         .calc-result-row .value.pct { color: var(--accent); }
         .calc-result-row .value.negative { color: var(--red); }
+        .calc-result-section {
+            padding: 10px 16px 6px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--accent);
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-secondary);
+            margin-top: 2px;
+        }
+        .calc-result-section:first-child { margin-top: 0; }
+        .calc-compare-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .calc-compare-table th {
+            padding: 10px 14px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            color: var(--text-secondary);
+            border-bottom: 2px solid var(--border);
+            background: var(--bg-secondary);
+        }
+        .calc-compare-table th:first-child {
+            text-align: left;
+            color: var(--accent);
+        }
+        .calc-compare-table td {
+            padding: 9px 14px;
+            border-bottom: 1px solid var(--border);
+        }
+        .calc-compare-table td:first-child {
+            color: var(--text-secondary);
+        }
+        .calc-compare-table td:nth-child(2),
+        .calc-compare-table td:nth-child(3) {
+            text-align: center;
+            font-weight: 600;
+            font-family: var(--font-mono);
+        }
+        .calc-compare-table td.cmp-currency { color: var(--green); }
+        .calc-compare-table td.cmp-pct { color: var(--accent); }
+        .calc-compare-table td.cmp-winner {
+            background: rgba(34, 197, 94, 0.08);
+            border-radius: 4px;
+        }
+        .calc-compare-table tr:last-child td { border-bottom: none; }
 
         .calc-error {
             background: rgba(239, 68, 68, 0.1);
@@ -2148,12 +2200,70 @@
             }
         }
 
+        function _fmtCalcVal(val, fmt) {
+            if (val === undefined || val === null) return '—';
+            if (fmt === 'currency') {
+                const num = Number(val);
+                const s = formatINR(Math.abs(num));
+                return num < 0 ? '−₹' + s.replace('₹','') : s;
+            }
+            if (fmt === 'pct') return Number(val).toFixed(2) + '%';
+            if (fmt === 'number') return Number(val).toLocaleString('en-IN');
+            return String(val);
+        }
+
         function renderCalcResult(data, container) {
             let rows = '';
             if (data.format && data.format.length > 0) {
-                for (const f of data.format) {
-                    let val = getNestedValue(data.result, f.key);
-                    if (val === undefined || val === null) continue;
+                let i = 0;
+                while (i < data.format.length) {
+                    const f = data.format[i];
+                    // Section header
+                    if (f.fmt === 'section') {
+                        rows += `<div class="calc-result-section">${f.label}</div>`;
+                        i++; continue;
+                    }
+                    // Comparison table start
+                    if (f.fmt === 'compare_start') {
+                        const colNew = f.col_new || 'New';
+                        const colOld = f.col_old || 'Old';
+                        let tableRows = '';
+                        i++;
+                        while (i < data.format.length && data.format[i].fmt === 'compare') {
+                            const c = data.format[i];
+                            const vNew = getNestedValue(data.result, c.key_new);
+                            const vOld = getNestedValue(data.result, c.key_old);
+                            const dNew = _fmtCalcVal(vNew, c.val_fmt);
+                            const dOld = _fmtCalcVal(vOld, c.val_fmt);
+                            const clsFmt = c.val_fmt === 'currency' ? 'cmp-currency' : c.val_fmt === 'pct' ? 'cmp-pct' : '';
+                            // Highlight winner (higher take-home / lower tax)
+                            const nNew = Number(vNew), nOld = Number(vOld);
+                            const isLowerBetter = c.label.toLowerCase().includes('tax') || c.label.toLowerCase().includes('deduction');
+                            let winNew = '', winOld = '';
+                            if (!isNaN(nNew) && !isNaN(nOld) && nNew !== nOld) {
+                                if (isLowerBetter) { if (nNew < nOld) winNew = ' cmp-winner'; else winOld = ' cmp-winner'; }
+                                else { if (nNew > nOld) winNew = ' cmp-winner'; else winOld = ' cmp-winner'; }
+                            }
+                            tableRows += `<tr>
+                                <td>${c.label}</td>
+                                <td class="${clsFmt}${winNew}">${dNew}</td>
+                                <td class="${clsFmt}${winOld}">${dOld}</td>
+                            </tr>`;
+                            i++;
+                        }
+                        // Skip compare_end marker
+                        if (i < data.format.length && data.format[i].fmt === 'compare_end') i++;
+                        rows += `<div class="calc-result-section">${f.label}</div>
+                            <table class="calc-compare-table">
+                                <thead><tr><th></th><th>${colNew}</th><th>${colOld}</th></tr></thead>
+                                <tbody>${tableRows}</tbody>
+                            </table>`;
+                        continue;
+                    }
+                    if (f.fmt === 'compare_end') { i++; continue; }
+                    // Regular row
+                    let val = f.key ? getNestedValue(data.result, f.key) : undefined;
+                    if (val === undefined || val === null) { i++; continue; }
                     let cls = '';
                     let displayVal = val;
                     if (f.fmt === 'currency') {
@@ -2174,6 +2284,7 @@
                         <span class="label">${f.label}</span>
                         <span class="value ${cls}">${displayVal}</span>
                     </div>`;
+                    i++;
                 }
             } else {
                 // Fallback: render all keys from result

@@ -474,12 +474,30 @@ def tax_bracket_india(taxable_income: float, regime: str = "new") -> dict:
 def ctc_to_take_home(ctc_annual: float, basic_pct: float = 0.50,
                      epf_on_full_basic: bool = True,
                      additional_80c: float = 0,
-                     nps_employer_pct: float = 0) -> dict:
+                     nps_employer_pct: float = 0,
+                     bonus_in_ctc: float = 0,
+                     is_metro: bool = True,
+                     monthly_rent: float = 0,
+                     lta_annual: float = 0,
+                     food_coupons_monthly: float = 0,
+                     monthly_additional_deduction: float = 0,
+                     medical_insurance_employer: float = 0,
+                     section_80d_self: float = 0) -> dict:
     """Given annual CTC, compute detailed salary breakdown and take-home.
 
-    Covers: Basic, HRA, Special Allowance, EPF (with EPS split + wage ceiling),
-    Gratuity provision (with eligibility & tax rules), Professional Tax,
-    Income Tax (both regimes with proper deductions).
+    Covers: Basic, HRA (with exemption), Special Allowance, EPF (with EPS split
+    + wage ceiling), Gratuity provision, Professional Tax, LTA, Food Coupons,
+    NPS, Medical Insurance, Income Tax (both regimes with proper deductions).
+
+    Enhanced inputs inspired by Groww, AmbitionBox, ClearTax, and SalaryBox:
+    - Bonus included in CTC (deducted to get gross)
+    - Metro/non-metro HRA rates and exemption
+    - Actual rent for HRA exemption computation
+    - LTA annual allowance (exempt up to travel proof)
+    - Food coupons/meal vouchers (exempt up to ₹26,400/yr per CBDT)
+    - Additional monthly deductions (insurance, loans, etc.)
+    - Section 80D self health insurance (₹25K limit)
+    - Employer medical insurance (exemption under 17(2))
 
     Indian EPF rules (2024-25):
     - Employee: 12% of Basic+DA (statutory ceiling ₹15,000/mo, but many companies
@@ -500,79 +518,120 @@ def ctc_to_take_home(ctc_annual: float, basic_pct: float = 0.50,
         basic_pct: Basic as fraction of CTC (default 0.50 per new Wage Code)
         epf_on_full_basic: If True, EPF on full basic; if False, cap at ₹15,000/mo
         additional_80c: Additional 80C investments beyond EPF (ELSS, PPF, LIC, etc.)
-        nps_employer_pct: Employer NPS contribution as % of basic (0-14%, deductible in new regime)
+        nps_employer_pct: Employer NPS contribution as % of basic (0-14%)
+        bonus_in_ctc: Annual bonus/variable pay included in CTC (deducted from gross)
+        is_metro: True for metro cities (HRA=50% of Basic), False for non-metro (40%)
+        monthly_rent: Monthly rent paid (for HRA exemption calculation)
+        lta_annual: Annual LTA component (exempt with proof, up to ₹20K typically)
+        food_coupons_monthly: Monthly food/meal vouchers (exempt up to ₹2,200/mo)
+        monthly_additional_deduction: Other monthly deductions (insurance, etc.)
+        medical_insurance_employer: Annual employer medical insurance premium (tax exempt)
+        section_80d_self: Health insurance premium (self) for 80D deduction (max ₹25K)
     """
     basic = ctc_annual * basic_pct
     basic_monthly = basic / 12
-    hra = basic * 0.50  # 50% of Basic (metro default)
+    hra_pct = 0.50 if is_metro else 0.40  # Metro: 50%, Non-metro: 40%
+    hra = basic * hra_pct
+
+    # ── Bonus / Variable Pay ──
+    bonus = max(0, bonus_in_ctc)
+
+    # ── LTA (Leave Travel Allowance) ──
+    # Exempt if travel bills submitted; otherwise taxable
+    lta = max(0, lta_annual)
+
+    # ── Food Coupons / Meal Vouchers ──
+    # Exempt up to ₹2,200/month = ₹26,400/yr as per CBDT
+    FOOD_COUPON_EXEMPT_MONTHLY = 2200
+    food_monthly = max(0, food_coupons_monthly)
+    food_annual = food_monthly * 12
+    food_exempt = min(food_annual, FOOD_COUPON_EXEMPT_MONTHLY * 12)  # ₹26,400 max
+    food_taxable = max(0, food_annual - food_exempt)
 
     # ── EPF Contributions ──
-    # Statutory wage ceiling: ₹15,000/month
     EPF_WAGE_CEILING_MONTHLY = 15000
-    epf_wage_ceiling_annual = EPF_WAGE_CEILING_MONTHLY * 12  # ₹1,80,000
+    epf_wage_ceiling_annual = EPF_WAGE_CEILING_MONTHLY * 12
 
     if epf_on_full_basic:
-        epf_basic = basic  # Apply on full basic
+        epf_basic = basic
     else:
-        epf_basic = min(basic, epf_wage_ceiling_annual)  # Cap at ₹15K/mo
+        epf_basic = min(basic, epf_wage_ceiling_annual)
 
-    epf_employee = epf_basic * 0.12              # 12% from employee salary
-    epf_employer_total = epf_basic * 0.12        # 12% from employer (part of CTC)
+    epf_employee = epf_basic * 0.12
+    epf_employer_total = epf_basic * 0.12
 
-    # EPS: 8.33% of Basic, ALWAYS capped at ₹15,000/mo regardless of epf_on_full_basic
+    # EPS: 8.33% of Basic, ALWAYS capped at ₹15,000/mo
     eps_basic_capped = min(basic, epf_wage_ceiling_annual)
-    eps_contribution = eps_basic_capped * 0.0833  # Max ₹1,250/mo = ₹14,994/yr
-    epf_employer_to_epf = epf_employer_total - eps_contribution  # Rest goes to EPF account
+    eps_contribution = eps_basic_capped * 0.0833
+    epf_employer_to_epf = epf_employer_total - eps_contribution
 
-    # EDLI (Employer Deposit-Linked Insurance): 0.50% of Basic (capped at ₹15K/mo)
+    # EDLI: 0.50% of Basic (capped at ₹15K/mo)
     edli = min(basic, epf_wage_ceiling_annual) * 0.005
 
     # ── NPS (if applicable) ──
     nps_employer = basic * (nps_employer_pct / 100) if nps_employer_pct else 0
 
     # ── Gratuity Provision ──
-    # Annual provision: (Basic_monthly × 15) / 26
-    # This equals ~4.81% of Basic per year of service
     gratuity_annual = (basic_monthly * 15) / 26
-    # Actual gratuity at various milestones (for display)
-    gratuity_5yr = (basic_monthly * 15 * 5) / 26   # Minimum eligible
+    gratuity_5yr = (basic_monthly * 15 * 5) / 26
     gratuity_10yr = (basic_monthly * 15 * 10) / 26
     gratuity_20yr = (basic_monthly * 15 * 20) / 26
-    GRATUITY_TAX_EXEMPT_LIMIT = 2000000  # ₹20L exempt under Section 10(10)
+    GRATUITY_TAX_EXEMPT_LIMIT = 2000000
+
+    # ── Employer Medical Insurance ──
+    medical_ins_employer = max(0, medical_insurance_employer)
 
     # ── Special Allowance ──
-    # CTC = Basic + HRA + Employer EPF + EDLI + Gratuity + NPS_employer + Special
+    # CTC = Basic + HRA + EPF_er + EDLI + Gratuity + NPS_er + Bonus + LTA + Food + Medical + Special
     special_allowance = (ctc_annual - basic - hra - epf_employer_total
-                         - edli - gratuity_annual - nps_employer)
+                         - edli - gratuity_annual - nps_employer
+                         - bonus - lta - food_annual - medical_ins_employer)
 
     # ── Gross Salary ──
     # Gross = CTC minus employer-only costs
-    employer_costs = epf_employer_total + edli + gratuity_annual + nps_employer
+    employer_costs = epf_employer_total + edli + gratuity_annual + nps_employer + medical_ins_employer
     gross_salary = ctc_annual - employer_costs
 
     # ── Professional Tax ──
-    # Standard across most states (Karnataka ₹2,400, Maharashtra ₹2,500, etc.)
     professional_tax = 2400
 
+    # ── Additional Deductions ──
+    additional_deduction_annual = monthly_additional_deduction * 12
+
+    # ── HRA Exemption (Old Regime only) ──
+    # Least of: (a) Actual HRA, (b) Rent - 10% Basic, (c) 50%/40% of Basic
+    rent_annual = monthly_rent * 12
+    if rent_annual > 0:
+        hra_exempt = min(
+            hra,                                        # (a) Actual HRA received
+            max(0, rent_annual - 0.10 * basic),         # (b) Rent paid - 10% Basic
+            basic * hra_pct                              # (c) 50%/40% of Basic
+        )
+    else:
+        hra_exempt = 0  # No rent = HRA fully taxable
+
     # ── Income Tax (New Regime) ──
-    # New regime: Standard deduction ₹75,000 only, no 80C/80D deductions
-    # But NPS employer contribution (up to 14% basic) is deductible
-    new_regime_deduction = nps_employer  # Only NPS employer in new regime
+    # New regime: Standard deduction ₹75,000 only, no 80C/80D/HRA deductions
+    new_regime_deduction = nps_employer
     new_taxable = gross_salary - new_regime_deduction
     new_tax = tax_bracket_india(new_taxable, "new")
 
     # ── Income Tax (Old Regime) ──
-    # Old regime: Standard deduction ₹50,000 + Section 80C (₹1.5L cap) + 80CCD(2) NPS
-    # EPF employee contribution auto-qualifies for 80C
+    # Old regime: Std deduction ₹50K + 80C (₹1.5L) + HRA exempt + LTA + 80D + 80CCD(2)
     section_80c_total = min(epf_employee + additional_80c, 150000)
-    section_80ccd2_nps = nps_employer  # Employer NPS - no cap in old regime (above 80C)
-    old_regime_deduction = section_80c_total + section_80ccd2_nps
+    section_80d_total = min(section_80d_self, 25000)  # Self: ₹25K limit (non-senior)
+    section_80ccd2_nps = nps_employer
+    old_regime_deduction = (section_80c_total + section_80ccd2_nps
+                            + hra_exempt + lta + food_exempt
+                            + section_80d_total)
     old_taxable = gross_salary - old_regime_deduction
     old_tax = tax_bracket_india(old_taxable, "old")
 
     # ── Take-Home ──
-    take_home_new = gross_salary - epf_employee - professional_tax - new_tax["total_tax"]
-    take_home_old = gross_salary - epf_employee - professional_tax - old_tax["total_tax"]
+    total_employee_deductions_new = epf_employee + professional_tax + new_tax["total_tax"] + additional_deduction_annual
+    total_employee_deductions_old = epf_employee + professional_tax + old_tax["total_tax"] + additional_deduction_annual
+    take_home_new = gross_salary - total_employee_deductions_new
+    take_home_old = gross_salary - total_employee_deductions_old
 
     # ── Retirement Benefits Total ──
     total_retirement_annual = epf_employee + epf_employer_total + gratuity_annual
@@ -593,8 +652,22 @@ def ctc_to_take_home(ctc_annual: float, basic_pct: float = 0.50,
         "basic_monthly": monthly_basic,
         "hra": round(hra),
         "hra_monthly": monthly_hra,
+        "hra_pct": round(hra_pct * 100),
+        "city_type": "Metro" if is_metro else "Non-Metro",
         "special_allowance": round(max(0, special_allowance)),
         "special_allowance_monthly": monthly_special,
+
+        # Bonus / Variable Pay
+        "bonus_annual": round(bonus),
+        "bonus_monthly": round(bonus / 12) if bonus > 0 else 0,
+
+        # LTA
+        "lta_annual": round(lta),
+
+        # Food Coupons
+        "food_coupons_annual": round(food_annual),
+        "food_coupons_exempt": round(food_exempt),
+        "food_coupons_taxable": round(food_taxable),
 
         # EPF details
         "epf_on_full_basic": epf_on_full_basic,
@@ -604,8 +677,8 @@ def ctc_to_take_home(ctc_annual: float, basic_pct: float = 0.50,
         "epf_employee_monthly": monthly_epf_employee,
         "epf_employer_total": round(epf_employer_total),
         "epf_employer_monthly": monthly_epf_employer,
-        "epf_employer_epf": round(epf_employer_to_epf),   # Employer's share → EPF account
-        "eps_contribution": round(eps_contribution),        # Employer's share → EPS (pension)
+        "epf_employer_epf": round(epf_employer_to_epf),
+        "eps_contribution": round(eps_contribution),
         "eps_monthly": round(eps_contribution / 12),
         "edli": round(edli),
 
@@ -620,16 +693,30 @@ def ctc_to_take_home(ctc_annual: float, basic_pct: float = 0.50,
         "gratuity_20yr": round(gratuity_20yr),
         "gratuity_tax_exempt_limit": GRATUITY_TAX_EXEMPT_LIMIT,
 
+        # Medical Insurance (Employer)
+        "medical_insurance_employer": round(medical_ins_employer),
+
         # Gross & Tax
         "gross_salary": round(gross_salary),
         "gross_monthly": monthly_gross,
         "professional_tax": professional_tax,
         "professional_tax_monthly": monthly_professional_tax,
 
+        # Additional deductions
+        "additional_deduction_annual": round(additional_deduction_annual),
+        "additional_deduction_monthly": round(monthly_additional_deduction),
+
+        # HRA Exemption (Old Regime)
+        "rent_annual": round(rent_annual),
+        "rent_monthly": round(monthly_rent),
+        "hra_exempt": round(hra_exempt),
+
         # Old regime deductions
         "section_80c_auto_epf": round(min(epf_employee, 150000)),
         "section_80c_total": round(section_80c_total),
         "section_80c_remaining": round(max(0, 150000 - epf_employee)),
+        "section_80d_self": round(section_80d_total),
+        "old_regime_total_deductions": round(old_regime_deduction),
 
         # Tax
         "tax_new_regime": round(new_tax["total_tax"]),
@@ -647,13 +734,17 @@ def ctc_to_take_home(ctc_annual: float, basic_pct: float = 0.50,
         "effective_tax_rate_new": round(new_tax["effective_rate"], 1),
         "effective_tax_rate_old": round(old_tax["effective_rate"], 1),
 
+        # Regime comparison
+        "better_regime": "New Regime" if take_home_new >= take_home_old else "Old Regime",
+        "regime_savings": round(abs(take_home_new - take_home_old)),
+
         # Retirement accrual
         "total_retirement_annual": round(total_retirement_annual),
         "total_retirement_monthly": round(total_retirement_annual / 12),
 
-        # Total employee deductions per month (EPF + PT + Tax)
-        "total_deductions_monthly_new": round((epf_employee + professional_tax + new_tax["total_tax"]) / 12),
-        "total_deductions_monthly_old": round((epf_employee + professional_tax + old_tax["total_tax"]) / 12),
+        # Total employee deductions per month (EPF + PT + Tax + Additional)
+        "total_deductions_monthly_new": round(total_employee_deductions_new / 12),
+        "total_deductions_monthly_old": round(total_employee_deductions_old / 12),
 
         # Legacy keys (backward compatibility)
         "basic_40pct": round(basic),

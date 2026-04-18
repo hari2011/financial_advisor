@@ -58,6 +58,12 @@ async def lifespan(app: FastAPI):
     from llm.engine import llm
     llm.initialize()
 
+    # Start background market data pre-fetcher (refreshes every hour)
+    from config import MARKET_PREFETCH
+    if MARKET_PREFETCH:
+        from tools.market_prefetch import start_prefetch
+        start_prefetch()
+
     # Initialize LangGraph checkpointer + graph
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sessions", "checkpoints.db")
     os.makedirs(os.path.dirname(db_path), exist_ok=True)

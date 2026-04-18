@@ -2,6 +2,7 @@
 import json
 import logging
 from agents.base import BaseAgent
+from config import ROUTER_MODE
 
 logger = logging.getLogger("financegpt.router")
 
@@ -54,17 +55,20 @@ Agents:
 AGENT RELATIONSHIP GRAPH — use this to pick complementary agents:
 - stock_analyst + portfolio_manager: Stock picks need allocation context (dividend stocks, long-term investing, portfolio building)
 - stock_analyst + tax_advisor: Capital gains (STCG/LTCG), tax harvesting on stocks
-- tax_advisor + retirement_planner + budget_planner: CTC/salary queries need tax (take-home), retirement (SIP capacity), budget (allocation)
+- tax_advisor + budget_planner: CTC/salary breakdown queries that EXPLICITLY ask about BOTH tax computation AND budget allocation
 - tax_advisor + mutual_fund_advisor: ELSS vs other 80C options, tax-saving funds
 - tax_advisor + loan_advisor: Home loan 24b deduction, loan vs invest decisions
 - loan_advisor + portfolio_manager: "Should I prepay loan or invest?" needs both
 - retirement_planner + mutual_fund_advisor: SIP in specific funds for retirement
+- retirement_planner + budget_planner: Long-term planning asking about BOTH retirement corpus AND current budget
 - portfolio_manager + stock_analyst + mutual_fund_advisor: "Build a portfolio" needs all three
 - insurance_advisor + retirement_planner: Term insurance coverage linked to retirement corpus
 - budget_planner + loan_advisor: EMI affordability depends on budget
 
 RULES:
 - Return a JSON array of 1-3 agent key strings, most relevant first.
+- PREFER FEWER agents. Use 1 agent for simple queries, 2-3 ONLY when the query genuinely spans multiple domains.
+- Pure budget/expense/earning queries ("how much should I earn", "plan my budget", "cost of living") → ["budget_planner"] ONLY. Budget planner handles CTC→take-home internally.
 - Simple price checks (gold, silver, dollar, crude oil) → ["general_advisor"]
 - Specific stock/company analysis (Reliance, TCS, Nifty trend) → ["stock_analyst"]
 - Stock investing advice (best stocks, dividend, value, long-term) → ["stock_analyst", "portfolio_manager"]
@@ -72,7 +76,7 @@ RULES:
 - SIP/retirement/corpus planning → ["retirement_planner"]
 - Loan EMI or affordability → ["loan_advisor"]
 - Budget or expense allocation → ["budget_planner"]
-- Use the relationship graph above to add complementary agents for multi-domain queries.
+- Use the relationship graph above ONLY when the query explicitly mentions topics from multiple domains.
 - Return ONLY valid JSON, no other text.
 
 Query: "{query}"
@@ -132,6 +136,82 @@ def _llm_classify(query: str) -> list:
         return []
 
 
+# ──────────────────────── Keyword fast-path ────────────────────────
+
+def _keyword_fast_path(query: str) -> list[str] | None:
+    """Fast keyword classification for clearly single-domain queries.
+
+    Returns list of agent keys if the query unambiguously matches ONE domain.
+    Returns None to fall through to LLM classification for ambiguous queries.
+    Saves ~5s by avoiding an LLM inference call on obvious queries.
+    """
+    q = query.lower()
+
+    hits = set()
+
+    # Budget / earning / expense queries
+    if any(p in q for p in ["budget", "how much should i earn", "how much do i need to earn",
+                             "how much to earn", "cost of living", "decent life",
+                             "monthly expense", "expense breakdown", "spending plan"]):
+        hits.add("budget_planner")
+
+    # Tax queries
+    if any(p in q for p in ["income tax", "pay tax", "save tax", "tax on", "tax for",
+                             "tax slab", "tax rate", "how much tax", "what tax",
+                             "calculate tax", "tax planning", "my tax",
+                             "80c", "80d", "itr filing", "tax regime",
+                             "old regime", "new regime", "capital gain", "tax saving",
+                             "tax deduction", "hra exemption"]):
+        hits.add("tax_advisor")
+
+    # Stock queries
+    if any(p in q for p in ["stock", "share price", "nifty", "sensex", "ipo",
+                             "dividend", "earnings"]):
+        hits.add("stock_analyst")
+
+    # Loan queries
+    if any(p in q for p in ["home loan", "car loan", "personal loan", "education loan",
+                             "loan emi", "cibil", "prepay loan", "loan interest"]):
+        hits.add("loan_advisor")
+
+    # Retirement queries
+    if any(p in q for p in ["retire", "retirement", "pension", "corpus plan"]):
+        hits.add("retirement_planner")
+
+    # Crypto queries
+    if any(p in q for p in ["bitcoin", "ethereum", "crypto", "altcoin"]):
+        hits.add("crypto_analyst")
+
+    # Insurance queries
+    if any(p in q for p in ["term insurance", "health insurance", "life insurance",
+                             "claim settlement"]):
+        hits.add("insurance_advisor")
+
+    # Mutual fund queries
+    if any(p in q for p in ["mutual fund", "elss", "fund nav", "amc"]):
+        hits.add("mutual_fund_advisor")
+
+    # Portfolio queries
+    if any(p in q for p in ["portfolio", "asset allocation", "rebalance"]):
+        hits.add("portfolio_manager")
+
+    # Gold/commodity prices → general
+    if any(p in q for p in ["gold price", "silver price", "dollar rate", "fd rate",
+                             "rbi policy"]):
+        hits.add("general_advisor")
+
+    # Only fast-path when exactly ONE domain matches (unambiguous)
+    if len(hits) == 1:
+        agent_key = hits.pop()
+        logger.info(f"Keyword fast-path → [{agent_key}]")
+        return [agent_key]
+
+    if len(hits) > 1:
+        logger.info(f"Keyword fast-path: multi-domain ({hits}), deferring to LLM")
+
+    return None  # Ambiguous or no clear signal — use LLM
+
+
 # ──────────────────────── Main router ────────────────────────
 
 def route_query(query: str, manual_agent: str = None) -> list:
@@ -143,7 +223,18 @@ def route_query(query: str, manual_agent: str = None) -> list:
         logger.info(f"Manual agent selection: {manual_agent}")
         return [(manual_agent, AGENT_REGISTRY[manual_agent])]
 
-    # LLM-based classification
+    # Keyword fast-path: enabled when ROUTER_MODE="keyword_first"
+    # LLM classification is always the fallback regardless of mode
+    if ROUTER_MODE == "keyword_first":
+        fast = _keyword_fast_path(query)
+        if fast:
+            result = [(key, AGENT_REGISTRY[key]) for key in fast]
+            logger.info(f"Fast-path routed to: {[r[0] for r in result]}")
+            return result
+    else:
+        logger.info(f"Router mode: {ROUTER_MODE} — skipping keyword fast-path")
+
+    # LLM-based classification (always used as fallback, or primary when mode=llm_only)
     llm_agents = _llm_classify(query)
 
     if llm_agents:

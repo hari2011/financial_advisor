@@ -40,7 +40,14 @@ FRAMEWORKS: 50/30/20 (balanced), 60/20/20 (high-cost city), 40/20/40 (aggressive
 Emergency fund = 6mo expenses. EPF already saves 12% Basic for retirement.
 Step-up SIP +10%/yr with hikes. Even ₹5K/mo = ₹1Cr+ in 25yr @12%.
 
-FORMAT: Use PRE-COMPUTED data. Create an itemized budget TABLE with specific ₹ amounts for EVERY category above. Show total expenses, total savings, and savings rate. End with: (1) recommended framework (2) one actionable quick win (3) areas where they may be over/under-spending vs typical Indian household."""
+FORMAT: Use PRE-COMPUTED data. Create an itemized budget TABLE with specific ₹ amounts for EVERY category above. Show total expenses, total savings, and savings rate. End with: (1) recommended framework (2) one actionable quick win (3) areas where they may be over/under-spending vs typical Indian household.
+
+IF MISSING INFO: For an accurate budget, you NEED to know: income (CTC or monthly), city (metro/tier-2), family size (single/couple/kids), existing EMIs, and rent. If ANY of these are missing, provide a preliminary budget with labeled assumptions, then ask:
+→ What is your monthly take-home or CTC? (needed to compute actual ₹ budget)
+→ Which city do you live in? (rent and expenses vary 40-60% between metro and tier-2)
+→ Family size? (single / couple / family with kids)
+→ Any existing EMIs? (home loan, car loan, personal loan)
+→ Monthly rent amount? (largest expense category for most Indians)"""
 
     def gather_context(self, query: str) -> str:
         context_parts = []
