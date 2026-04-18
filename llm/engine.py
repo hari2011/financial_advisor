@@ -5,6 +5,7 @@ import re
 import time
 import hashlib
 import logging
+import threading
 from collections import OrderedDict
 from llama_cpp import Llama
 from config import MODEL_PATH, LLM_CONFIG, MODEL_DIR, MODEL_REPO, MODEL_FILE
@@ -26,6 +27,7 @@ class ResponseCache:
         self._cache: OrderedDict[str, tuple[float, str]] = OrderedDict()
         self._maxsize = maxsize
         self._ttl = ttl
+        self._lock = threading.Lock()
         self.hits = 0
         self.misses = 0
 
@@ -37,25 +39,27 @@ class ResponseCache:
 
     def get(self, messages: list) -> str | None:
         key = self._make_key(messages)
-        if key in self._cache:
-            ts, response = self._cache[key]
-            if time.time() - ts < self._ttl:
-                self._cache.move_to_end(key)
-                self.hits += 1
-                logger.info(f"Response cache HIT (hits={self.hits}, misses={self.misses})")
-                return response
-            else:
-                del self._cache[key]
-        self.misses += 1
-        return None
+        with self._lock:
+            if key in self._cache:
+                ts, response = self._cache[key]
+                if time.time() - ts < self._ttl:
+                    self._cache.move_to_end(key)
+                    self.hits += 1
+                    logger.info(f"Response cache HIT (hits={self.hits}, misses={self.misses})")
+                    return response
+                else:
+                    del self._cache[key]
+            self.misses += 1
+            return None
 
     def put(self, messages: list, response: str):
         key = self._make_key(messages)
-        self._cache[key] = (time.time(), response)
-        self._cache.move_to_end(key)
-        # Evict oldest if over limit
-        while len(self._cache) > self._maxsize:
-            self._cache.popitem(last=False)
+        with self._lock:
+            self._cache[key] = (time.time(), response)
+            self._cache.move_to_end(key)
+            # Evict oldest if over limit
+            while len(self._cache) > self._maxsize:
+                self._cache.popitem(last=False)
 
     def clear(self):
         self._cache.clear()
@@ -104,35 +108,43 @@ class LLMEngine:
         self._ensure_model()
         from platform_setup import GPU, print_system_info
         print_system_info()
-        backend_label = GPU.backend.upper() if GPU.backend != "cpu" else "CPU-only"
+        is_cpu_only = GPU.backend == "cpu"
+        backend_label = GPU.backend.upper() if not is_cpu_only else "CPU-only"
         logger.info(f"Loading LLM ({backend_label}, {LLM_CONFIG['n_gpu_layers']} GPU layers, "
                      f"ctx={LLM_CONFIG['n_ctx']}, threads={LLM_CONFIG['n_threads']})...")
         t0 = time.time()
 
-        # KV cache quantization: Q8_0 reduces KV cache memory by ~50%
-        # while maintaining near-lossless quality. Frees ~0.75-1GB RAM
-        # on n_ctx=24576, allowing longer conversations or lower memory usage.
+        # KV cache quantization:
+        #   GPU:  Q8_0 — best balance of quality vs memory savings
+        #   CPU:  Q4_0 — more aggressive quantization to save RAM and speed up
         # type_k/type_v: 1=F16 (default), 8=Q8_0, 2=Q4_0
-        kv_quant_type = 8  # Q8_0 — best balance of quality vs memory savings
+        kv_quant_type = 2 if is_cpu_only else 8
 
-        # Flash attention: speeds up prompt processing (prefill) by ~20-30%
-        # and reduces memory usage. Supported on Metal (macOS) and CUDA.
-        use_flash_attn = True
+        # Flash attention: speeds up prompt processing by ~20-30%.
+        # Only supported on Metal (macOS) and CUDA — disabled on CPU-only.
+        use_flash_attn = not is_cpu_only
 
-        logger.info(f"KV cache quantization: Q8_0 (type={kv_quant_type}) | Flash attention: {use_flash_attn}")
+        # Batch size: smaller on CPU to reduce memory pressure
+        n_batch = LLM_CONFIG.get("n_batch", 256 if is_cpu_only else 512)
+
+        kv_label = "Q4_0 (CPU-optimized)" if is_cpu_only else "Q8_0"
+        logger.info(f"KV cache: {kv_label} | Flash attn: {use_flash_attn} | Batch: {n_batch}")
 
         self.model = Llama(
             model_path=MODEL_PATH,
             n_ctx=LLM_CONFIG["n_ctx"],
             n_gpu_layers=LLM_CONFIG["n_gpu_layers"],
             n_threads=LLM_CONFIG["n_threads"],
+            n_batch=n_batch,
             type_k=kv_quant_type,
             type_v=kv_quant_type,
             flash_attn=use_flash_attn,
             verbose=False,
         )
         self._initialized = True
-        logger.info(f"LLM loaded in {time.time()-t0:.1f}s — ready for inference")
+        elapsed = time.time() - t0
+        mode = "CPU-only (Q4_K_M)" if is_cpu_only else f"GPU ({GPU.backend.upper()}, Q5_K_M)"
+        logger.info(f"LLM loaded in {elapsed:.1f}s — {mode} — ready for inference")
 
     def _build_messages(self, system_prompt: str, user_message: str,
                         context: str = "", history: list = None) -> list:

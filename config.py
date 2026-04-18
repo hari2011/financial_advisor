@@ -12,11 +12,22 @@ from platform_setup import (
 )
 
 # ──────────────────────── Model Configuration ────────────────────────
-# Qwen3 8B Q5_K_M (April 2025)
+# Qwen3 8B (April 2025)
 # Hybrid thinking/non-thinking model, superior reasoning vs Qwen 2.5
 # Standard transformer architecture — fully compatible with llama-cpp-python
+#
+# Model selection by platform:
+#   GPU (Metal/CUDA/Vulkan) → Q5_K_M (~5.5 GB)  — best quality
+#   CPU-only               → Q4_K_M (~4.6 GB)  — faster inference, good quality
 MODEL_REPO = "bartowski/Qwen_Qwen3-8B-GGUF"
-MODEL_FILE = "Qwen_Qwen3-8B-Q5_K_M.gguf"
+
+IS_CPU_ONLY = GPU.backend == "cpu"
+
+if IS_CPU_ONLY:
+    MODEL_FILE = "Qwen_Qwen3-8B-Q4_K_M.gguf"
+else:
+    MODEL_FILE = "Qwen_Qwen3-8B-Q5_K_M.gguf"
+
 MODEL_PATH = os.path.join(MODEL_DIR, MODEL_FILE)
 
 # ──────────────────────── LLM Inference Settings ────────────────────────

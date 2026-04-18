@@ -53,6 +53,7 @@ async def _init_session_db():
     """Create session metadata table if it doesn't exist."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("PRAGMA journal_mode=WAL")
         await db.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 session_id TEXT PRIMARY KEY,
@@ -199,6 +200,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Cache headers for static assets (skip HTML so users always get fresh pages)
+@app.middleware("http")
+async def static_cache_headers(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static/") and not path.endswith(".html"):
+        response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
 
 # Serve static files
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")

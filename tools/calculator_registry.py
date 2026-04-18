@@ -934,10 +934,12 @@ CALCULATORS = {
 import hashlib
 import json as _json
 import time as _time
+import threading as _threading
 
 _calc_cache: dict[str, tuple[float, dict]] = {}  # key -> (timestamp, result)
 _CALC_CACHE_TTL = 300  # 5 minutes — pure functions, but allows param tuning
 _CALC_CACHE_MAX = 256  # max entries to prevent unbounded growth
+_calc_cache_lock = _threading.Lock()
 
 
 def _calc_cache_key(calc_id: str, inputs: dict) -> str:
@@ -970,13 +972,14 @@ def run_calculator(calc_id: str, inputs: dict) -> dict:
 
     # Check cache first
     cache_key = _calc_cache_key(calc_id, inputs)
-    if cache_key in _calc_cache:
-        ts, cached_result = _calc_cache[cache_key]
-        if _time.time() - ts < _CALC_CACHE_TTL:
-            cached_result["_cached"] = True
-            return cached_result
-        else:
-            del _calc_cache[cache_key]
+    with _calc_cache_lock:
+        if cache_key in _calc_cache:
+            ts, cached_result = _calc_cache[cache_key]
+            if _time.time() - ts < _CALC_CACHE_TTL:
+                cached_result["_cached"] = True
+                return cached_result
+            else:
+                del _calc_cache[cache_key]
 
     calc = CALCULATORS[calc_id]
 
@@ -1014,8 +1017,9 @@ def run_calculator(calc_id: str, inputs: dict) -> dict:
     if calc["fn"] == "_tax_compare":
         result = _tax_compare(processed)
         if "error" not in result:
-            _evict_stale_cache()
-            _calc_cache[cache_key] = (_time.time(), result)
+            with _calc_cache_lock:
+                _evict_stale_cache()
+                _calc_cache[cache_key] = (_time.time(), result)
         return result
 
     try:
@@ -1030,8 +1034,9 @@ def run_calculator(calc_id: str, inputs: dict) -> dict:
             "format": calc["result_format"],
         }
         # Cache successful results
-        _evict_stale_cache()
-        _calc_cache[cache_key] = (_time.time(), output)
+        with _calc_cache_lock:
+            _evict_stale_cache()
+            _calc_cache[cache_key] = (_time.time(), output)
         return output
     except Exception as e:
         return {"error": f"Calculation error: {str(e)}"}

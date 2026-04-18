@@ -32,6 +32,7 @@ logger = logging.getLogger("financegpt.tools.deep_research")
 # ── Cache for extracted pages (avoid re-fetching same URL) ──
 _page_cache: dict = {}       # url → (text, timestamp)
 _PAGE_CACHE_TTL: int = 900   # 15 minutes
+_page_cache_lock = threading.Lock()
 
 # ── Domains to skip (paywalls, login-walls, useless) ──
 _BLOCKED_DOMAINS = {
@@ -43,6 +44,7 @@ _BLOCKED_DOMAINS = {
 # ── Research result cache ──
 _research_cache: dict = {}
 _RESEARCH_CACHE_TTL: int = 600  # 10 minutes
+_research_cache_lock = threading.Lock()
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -241,10 +243,11 @@ def _extract_page_text(url: str, max_chars: int = 3000) -> str:
 
         # Cache it
         if result:
-            _page_cache[url] = (result, time.time())
-            if len(_page_cache) > 50:
-                oldest = min(_page_cache, key=lambda k: _page_cache[k][1])
-                del _page_cache[oldest]
+            with _page_cache_lock:
+                _page_cache[url] = (result, time.time())
+                if len(_page_cache) > 50:
+                    oldest = min(_page_cache, key=lambda k: _page_cache[k][1])
+                    del _page_cache[oldest]
 
         return result
 
@@ -432,11 +435,12 @@ def deep_research(query: str, max_context_chars: int = 5000,
 
     # Check cache
     ck = hashlib.md5(query.lower().strip().encode()).hexdigest()
-    if ck in _research_cache:
-        text, ts = _research_cache[ck]
-        if time.time() - ts < _RESEARCH_CACHE_TTL:
-            logger.info(f"Deep research cache hit ({len(text)} chars)")
-            return text
+    with _research_cache_lock:
+        if ck in _research_cache:
+            text, ts = _research_cache[ck]
+            if time.time() - ts < _RESEARCH_CACHE_TTL:
+                logger.info(f"Deep research cache hit ({len(text)} chars)")
+                return text
 
     # Step 1: Get search queries (LLM-generated or rule-based fallback)
     if search_queries:
@@ -468,9 +472,10 @@ def deep_research(query: str, max_context_chars: int = 5000,
     logger.info(f"Deep research: {len(selected)} sources, {len(output)} chars, {elapsed:.1f}s")
 
     # Cache result
-    _research_cache[ck] = (output, time.time())
-    if len(_research_cache) > 30:
-        oldest = min(_research_cache, key=lambda k: _research_cache[k][1])
-        del _research_cache[oldest]
+    with _research_cache_lock:
+        _research_cache[ck] = (output, time.time())
+        if len(_research_cache) > 30:
+            oldest = min(_research_cache, key=lambda k: _research_cache[k][1])
+            del _research_cache[oldest]
 
     return output

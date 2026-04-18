@@ -176,26 +176,45 @@ def get_cpu_count() -> int:
 def compute_optimal_config(gpu: GPUInfo, ram_mb: int, cpu_threads: int) -> dict:
     """Compute optimal LLM config based on detected hardware."""
 
-    # Context window: scale with available memory
-    if ram_mb >= 32768:
-        n_ctx = 32768       # 32K for 32GB+ RAM
-    elif ram_mb >= 16384:
-        n_ctx = 24576       # 24K for 16GB+ RAM
-    elif ram_mb >= 10240:
-        n_ctx = 16384       # 16K for 10GB+ RAM
+    is_cpu_only = gpu.backend == "cpu"
+
+    # Context window: scale with available memory (smaller for CPU to save RAM)
+    if is_cpu_only:
+        if ram_mb >= 32768:
+            n_ctx = 16384       # 16K for 32GB+ CPU
+        elif ram_mb >= 16384:
+            n_ctx = 8192        # 8K for 16GB+ CPU
+        else:
+            n_ctx = 4096        # 4K for <16 GB CPU
     else:
-        n_ctx = 8192        # 8K for <10 GB
+        if ram_mb >= 32768:
+            n_ctx = 32768       # 32K for 32GB+ with GPU
+        elif ram_mb >= 16384:
+            n_ctx = 24576       # 24K for 16GB+ with GPU
+        elif ram_mb >= 10240:
+            n_ctx = 16384       # 16K for 10GB+ with GPU
+        else:
+            n_ctx = 8192        # 8K for <10 GB with GPU
 
     # GPU layers
     n_gpu_layers = gpu.layers
 
+    # CPU-only: use more threads for parallelism
+    if is_cpu_only:
+        # Use ~80% of cores on CPU-only (vs 70% with GPU, to leave GPU room)
+        cpu_threads = max(2, int((os.cpu_count() or 4) * 0.8))
+
     # Max tokens: scale with context
     max_tokens = 4096 if n_ctx >= 16384 else 2048
+
+    # Batch size: smaller on CPU to reduce memory pressure
+    n_batch = 256 if is_cpu_only else 512
 
     return {
         "n_ctx": n_ctx,
         "n_gpu_layers": n_gpu_layers,
         "n_threads": cpu_threads,
+        "n_batch": n_batch,
         "temperature": 0.7,
         "top_p": 0.8,
         "top_k": 20,
@@ -215,6 +234,7 @@ OPTIMAL_CONFIG = compute_optimal_config(GPU, TOTAL_RAM_MB, CPU_THREADS)
 
 def print_system_info():
     """Pretty-print detected system info (called at startup)."""
+    model_quant = "Q4_K_M (CPU-optimized)" if GPU.backend == "cpu" else "Q5_K_M (GPU-optimized)"
     lines = [
         "╔══════════════════════════════════════════════════╗",
         "║          FinanceGPT — System Detection           ║",
@@ -227,8 +247,10 @@ def print_system_info():
         f"║  GPU VRAM    : {GPU.vram_mb:,} MB" if GPU.vram_mb else "║  GPU VRAM    : N/A (CPU mode)",
         f"║  GPU Layers  : {GPU.layers} (-1 = all)",
         "╠══════════════════════════════════════════════════╣",
+        f"║  Model       : Qwen3-8B {model_quant}",
         f"║  Context     : {OPTIMAL_CONFIG['n_ctx']:,} tokens",
         f"║  Max Output  : {OPTIMAL_CONFIG['max_tokens']:,} tokens",
+        f"║  Batch Size  : {OPTIMAL_CONFIG['n_batch']}",
         f"║  Threads     : {OPTIMAL_CONFIG['n_threads']}",
         "╚══════════════════════════════════════════════════╝",
     ]
