@@ -9,22 +9,25 @@ All processing happens on your machine — your financial data never leaves your
 ## ✨ Key Highlights
 
 ### AI & LLM
-- **Qwen3-8B Q5_K_M** — 5-bit quantized (5.5 GB), runs locally via llama-cpp-python
+- **Qwen3-8B** — Q5_K_M on GPU (5.5 GB), Q4_K_M on CPU (4.6 GB), auto-selected by hardware
 - **10 specialist AI agents** — auto-routed via LLM classifier with agent dependency graph
 - **Agentic LangGraph pipeline** — conditional edges, self-reflection, and adaptive tool selection
 - **Query complexity classification** — LLM classifies queries as simple/moderate/complex to optimize the pipeline path
-- **Self-reflection loop** — complex queries trigger automatic response quality evaluation and refinement
+- **Self-reflection loop** — complex queries trigger automatic response quality evaluation and refinement (GPU only)
 - **Adaptive context gathering** — simple queries skip expensive web search; complex queries get deeper research
 - **Multi-agent collaboration** — complex queries route to multiple agents for a unified answer
-- **Qwen3 non-thinking mode** — `/no_think` for fast, direct responses without chain-of-thought overhead
+- **Hybrid thinking mode** — `/think` for complex queries (visible reasoning in collapsible UI block), `/no_think` for fast direct responses
+- **CPU/GPU pipeline tuning** — auto-configured pipeline: CPU gets lean mode (no reflection, no thinking, shorter responses); GPU gets full mode
 
 ### Performance & Caching
-- **KV cache quantization (Q8_0)** — reduces KV cache memory by ~50%, freeing ~1 GB RAM at 24K context
+- **KV cache quantization** — Q8_0 on GPU (~50% savings), Q4_0 on CPU (~75% savings)
 - **Flash attention** — 20-30% faster prompt processing (prefill), supported on Metal and CUDA
 - **Response cache** — LRU cache (64 entries, 10-min TTL) for `generate()` — instant repeat answers
+- **Router cache** — 5-min TTL, 32-entry cache for LLM classification — repeated queries skip router LLM call
 - **Calculator result cache** — LRU with 5-min TTL on all 36 calculators (same inputs = cached output)
 - **Prompt prefix caching** — automatic via singleton `Llama` object; shared system prompt KV reused across turns
 - **Parallel context gathering** — market data, web search, deep research, and agent context all run concurrently
+- **Market prefetch warm-up** — market data fetch starts in background during routing, overlapping I/O with LLM
 
 ### Financial Engine
 - **36 financial calculators** — SIP, EMI, FD, PPF, NPS, EPF, SSY, FIRE (5 types), capital gains, HRA, CTC, and more
@@ -33,23 +36,28 @@ All processing happens on your machine — your financial data never leaves your
 - **Enhanced calculator outputs** — wealth multiplier, delay costs, real returns, tax-optimized tips, cross-product comparisons
 
 ### Data & Research
-- **Real-time market data** — yfinance for NSE/BSE stocks, indices, gold, crypto (no API keys)
+- **Real-time market data** — yfinance for NSE/BSE stocks, indices, gold (24K/22K/18K), silver, crude, forex (no API keys)
+- **Gold prices with purity** — 24K (investment grade), 22K (standard Indian jewelry), 18K (premium jewelry) — all from live COMEX + USD/INR conversion
+- **Live market ticker** — scrolling header bar showing Nifty, Sensex, Gold 24K/22K, USD/INR with auto-refresh
 - **Deep research** — multi-source web research with Perplexity-style `[1]` citation cards
 - **Knowledge base** — Indian finance reference (tax slabs, 80C limits, NPS rules, EPF rates)
 - **File upload** — CSV, PDF, Excel, JSON, TXT parsed and injected into context
 
 ### UI & UX
 - **Modern chat UI** — streaming tokens, syntax highlighting (highlight.js), math rendering (KaTeX)
+- **Thinking block** — collapsible Claude-style thinking window showing LLM reasoning in real-time with elapsed timer
+- **Live market ticker** — scrolling bar with indices, gold (24K/22K), forex — auto-refreshes every 5 minutes
 - **36-calculator grid** — searchable, with input forms, instant results, and rich output formatting
 - **Light / Dark themes** — toggle with persistence
 - **Stop / Regenerate / Feedback** — full conversation control
 - **Export to Markdown** — download entire chat history
-- **Pipeline timing** — per-step performance breakdown on every response
+- **Pipeline timing** — per-step performance breakdown with token speed (tok/s)
 
 ### Infrastructure
 - **Cross-platform** — macOS (Apple Silicon + Intel), Linux (CUDA/Vulkan), Windows
 - **Auto GPU detection** — Metal → CUDA → Vulkan → CPU fallback
-- **Auto scaling** — context window, GPU layers, threads tuned to your hardware
+- **Auto scaling** — context window, GPU layers, threads, batch size, and pipeline depth all tuned to your hardware
+- **CPU-first design** — fully functional on CPU-only machines with optimized pipeline (lean mode)
 - **Session persistence** — conversation history + user profile via SQLite checkpointing
 - **Privacy** — zero API keys, zero telemetry, zero cloud calls
 
@@ -167,7 +175,8 @@ pip install llama-cpp-python --force-reinstall --no-cache-dir
 python setup_model.py
 ```
 
-Downloads **Qwen3-8B-Q5_K_M** (~5.5 GB) from Hugging Face. One-time download.
+Downloads **Qwen3-8B** from Hugging Face (~5.5 GB for GPU, ~4.6 GB for CPU). One-time download.
+The correct quantization (Q5_K_M for GPU, Q4_K_M for CPU) is auto-selected based on your hardware.
 
 > If rate-limited, set a Hugging Face token:
 > ```bash
@@ -194,6 +203,8 @@ Open **http://localhost:8501** in your browser. The app auto-detects your hardwa
 ║  GPU Name    : Apple M3 Pro                      ║
 ║  Context     : 24,576 tokens                     ║
 ║  Max Output  : 4,096 tokens                      ║
+║  Batch Size  : 1024                              ║
+║  Pipeline    : GPU-accelerated (full)            ║
 ╚══════════════════════════════════════════════════╝
 ```
 
@@ -299,25 +310,30 @@ FinanceGPT implements a **hybrid agentic architecture** — combining autonomous
 
 ```
 User Query
-    ↓
-┌──────────────────────────────────────────────────────────────────────────┐
-│  LangGraph Agentic Pipeline (SQLite Checkpointing)                     │
-│                                                                        │
-│  START → route ─→ gather_context ─→ build_prompt ─→ generate           │
-│           ↓              ↓                              ↓              │
-│     LLM classifies   Adaptive                  ┌── simple/moderate ─→ END
-│     agents +         tool selection:            │                       │
-│     complexity +     • simple: calcs only       └── complex ──┐        │
-│     search queries   • moderate: + web search                 ↓        │
-│                      • complex: + deep research          reflect       │
-│                                                              ↓         │
-│                                                    ┌── pass ────→ END  │
-│                                                    └── fail ──┐        │
-│                                                               ↓        │
-│                                                           refine → END │
-└──────────────────────────────────────────────────────────────────────────┘
-    ↓
-  FastAPI SSE → Browser
+    |
++----------------------------------------------------------------------+
+|  LangGraph Agentic Pipeline (SQLite Checkpointing)                   |
+|                                                                      |
+|  START -> route --> gather_context --> build_prompt --> generate      |
+|            |             |                |                |         |
+|      LLM classifies  Adaptive        Adds /think      Streams      |
+|      agents +        tool selection:  (GPU+complex)    tokens +     |
+|      complexity +    * simple: calcs  or /no_think     thinking     |
+|      search queries    only           (CPU/simple)     events       |
+|      (cached 5min)   * moderate:                          |         |
+|                        + web search              +-- simple/mod --> END
+|                      * complex:                  |                   |
+|                        + deep research   (GPU) --+-- complex --+    |
+|                                                                |    |
+|                                                           reflect   |
+|                                                              |      |
+|                                                   +-- pass --> END  |
+|                                                   +-- fail --+      |
+|                                                              |      |
+|                                               (CPU: skip) refine -> END
++----------------------------------------------------------------------+
+    |
+  FastAPI SSE -> Browser (with thinking block + market ticker)
 ```
 
 ### Agentic Capabilities
@@ -328,8 +344,11 @@ User Query
 | **Query Complexity Classification** | LLM classifies each query as `simple`, `moderate`, or `complex` — determining the pipeline path, tool invocation depth, and whether reflection is needed |
 | **Adaptive Tool Selection** | Simple queries (greetings, pure calculations) skip web search entirely; moderate queries get standard context; complex queries get deeper research with higher limits |
 | **LLM-Generated Search Queries** | The router generates tailored web search queries based on the selected agents' context needs — not generic keywords, but targeted information retrieval |
-| **Self-Reflection Loop** | Complex queries trigger a post-generation quality check: a lightweight LLM evaluates whether all aspects of the query were addressed |
+| **Visible Thinking** | Complex queries on GPU trigger `/think` mode — LLM reasoning is streamed in real-time to a collapsible UI block (Claude-style), giving transparency into the AI's thought process |
+| **Self-Reflection Loop** | Complex queries on GPU trigger a post-generation quality check: a lightweight LLM evaluates whether all aspects of the query were addressed |
 | **Automatic Refinement** | If reflection detects gaps (e.g., "no comparison between old and new tax regime as asked"), the LLM generates an improved response incorporating the feedback |
+| **CPU/GPU Pipeline Tuning** | Auto-detects hardware and configures the entire pipeline: CPU gets lean mode (no reflection, no thinking, shorter responses, less context) while GPU gets the full experience |
+| **Router Response Caching** | LLM classification results are cached for 5 minutes — repeated or similar queries skip the LLM router entirely |
 | **Conditional Graph Edges** | The pipeline uses `add_conditional_edges()` — after generation, the graph dynamically routes to reflection, refinement, or directly to END based on query complexity and response quality |
 | **Agent Dependency Graph** | 10 agents with explicit `depends_on`, `calculators`, and `context_needs` — enabling intelligent routing that understands which agents handle connected topics |
 | **Session Memory** | Profile facts (income, age, risk appetite, goals) are extracted from conversations and persist across sessions via SQLite checkpointing |
@@ -383,22 +402,50 @@ curl http://localhost:8501/api/health
 
 ### Auto-Scaling Rules
 
-| RAM | Context Window | Max Output | GPU Layers |
+**GPU Systems:**
+
+| RAM | Context Window | Max Output | Batch Size | GPU Layers |
+|-----|---------------|------------|------------|------------|
+| 32 GB+ | 32,768 tokens | 4,096 | 1024 | All (-1) |
+| 16-32 GB | 24,576 tokens | 4,096 | 1024 | All (-1) |
+| 10-16 GB | 16,384 tokens | 2,048 | 1024 | All (-1) |
+| < 10 GB | 8,192 tokens | 2,048 | 1024 | Auto (partial) |
+
+**CPU-Only Systems:**
+
+| RAM | Context Window | Max Output | Batch Size |
 |-----|---------------|------------|------------|
-| 32 GB+ | 32,768 tokens | 4,096 | All (-1) |
-| 16-32 GB | 24,576 tokens | 4,096 | All (-1) |
-| 10-16 GB | 16,384 tokens | 2,048 | All (-1) |
-| < 10 GB | 8,192 tokens | 2,048 | Auto (partial) |
+| 32 GB+ | 16,384 tokens | 1,536 | 512 |
+| 16-32 GB | 8,192 tokens | 1,536 | 512 |
+| < 16 GB | 4,096 tokens | 1,536 | 512 |
+
+### CPU vs GPU Pipeline
+
+The app automatically configures the pipeline based on detected hardware:
+
+| Setting | CPU (Lean) | GPU (Full) |
+|---------|-----------|------------|
+| **Model quantization** | Q4_K_M (4.6 GB) | Q5_K_M (5.5 GB) |
+| **KV cache** | Q4_0 (~75% savings) | Q8_0 (~50% savings) |
+| **Flash attention** | Off | On |
+| **Response max tokens** | 1,536 | 4,096 |
+| **Router max tokens** | 100 | 150 |
+| **Thinking mode (/think)** | Disabled | Enabled (complex queries) |
+| **Reflection + refinement** | Disabled | Enabled (complex queries) |
+| **Deep research context** | 3,500 chars | 7,000 chars |
+| **Threads** | 80% of cores | 70% of cores |
+
+> No manual configuration needed — the app detects your hardware at startup and selects the optimal profile automatically.
 
 ### Model Quantization
 
-The app uses **Q5_K_M** quantization — the optimal balance for consumer hardware:
+The app auto-selects the model based on your hardware:
 
-| Quant | Size | Quality | Speed | Recommendation |
-|-------|------|---------|-------|----------------|
-| Q8_0 | ~8.5 GB | Near-lossless | Slower | Best quality, 32 GB+ RAM only |
-| **Q5_K_M** | **~5.5 GB** | **Excellent** | **Good** | **Default — best for 16-18 GB RAM** |
-| Q4_K_M | ~4.5 GB | Good | Faster | Low-RAM fallback (8-12 GB) |
+| Quant | Size | Quality | Speed | When Used |
+|-------|------|---------|-------|-----------|
+| Q8_0 | ~8.5 GB | Near-lossless | Slower | Manual override only (32 GB+ RAM) |
+| **Q5_K_M** | **~5.5 GB** | **Excellent** | **Good** | **Auto-selected when GPU detected** |
+| **Q4_K_M** | **~4.6 GB** | **Good** | **Faster** | **Auto-selected on CPU-only systems** |
 | Q3_K_M | ~3.5 GB | Degraded | Fastest | Not recommended for financial advice |
 
 ---
@@ -407,7 +454,9 @@ The app uses **Q5_K_M** quantization — the optimal balance for consumer hardwa
 
 | Tool | Source | API Key? | Description |
 |------|--------|----------|-------------|
-| **Market Data** | yfinance | No | Real-time stock prices, indices, gold, silver, crypto, forex |
+| **Live Market Data** | yfinance | No | Real-time stock prices, indices, gold (24K/22K/18K), silver, crude, crypto, forex |
+| **Market Ticker** | yfinance (cached) | No | Scrolling header bar with auto-refresh every 5 minutes |
+| **Mutual Fund NAV** | mfapi.in | No | Live NAVs for all AMFI-registered mutual funds |
 | **Web Search** | DuckDuckGo | No | Text + news search, world market briefing |
 | **Deep Research** | DuckDuckGo + page fetch | No | Multi-source research with `[1]` citation cards |
 | **Smart Calculator** | Internal | N/A | Auto-detects computation needs from natural language |
@@ -421,6 +470,8 @@ The app uses **Q5_K_M** quantization — the optimal balance for consumer hardwa
 | Feature | Description |
 |---------|-------------|
 | **Streaming responses** | Token-by-token streaming via SSE with animated cursor |
+| **Thinking block** | Collapsible Claude-style window showing LLM reasoning in real-time (complex queries) |
+| **Live market ticker** | Scrolling header with Nifty, Sensex, Gold 24K/22K, USD/INR — auto-refreshes every 5 min |
 | **36-calculator grid** | Searchable grid, input forms, instant results with rich formatting |
 | **Syntax highlighting** | Code blocks highlighted via highlight.js |
 | **Math rendering** | Financial formulas rendered via KaTeX |
@@ -432,7 +483,7 @@ The app uses **Q5_K_M** quantization — the optimal balance for consumer hardwa
 | **Citation cards** | Perplexity-style `[1]` badges with source domain tooltip |
 | **Export conversation** | 📥 Download full chat as Markdown file |
 | **File upload** | 📎 Upload CSV/PDF/Excel/JSON for analysis |
-| **Pipeline timing** | ⏱ Click time badge to see per-step breakdown |
+| **Pipeline timing** | ⏱ Click time badge to see per-step breakdown with token speed (tok/s) |
 | **Keyboard shortcuts** | `Esc` stop, `/` focus input, `Cmd+Shift+N` new chat, `Cmd+Shift+E` export |
 | **XSS protection** | All LLM output sanitized via DOMPurify before rendering |
 
@@ -444,8 +495,8 @@ The app uses **Q5_K_M** quantization — the optimal balance for consumer hardwa
 financial_advisor/
 ├── server.py                   # FastAPI backend + SSE streaming (main entry point)
 ├── app.py                      # Streamlit UI (alternative frontend)
-├── config.py                   # Model config, agents, Indian market defaults
-├── platform_setup.py           # Cross-platform OS/GPU/RAM auto-detection
+├── config.py                   # Model config, CPU/GPU pipeline tuning, agents, Indian market defaults
+├── platform_setup.py           # Cross-platform OS/GPU/RAM auto-detection + optimal config
 ├── setup_model.py              # Model downloader + platform install guide
 ├── requirements.txt            # Python dependencies
 ├── test_cross_ref.py           # 53 calculator accuracy tests (Groww/ClearTax verified)
@@ -471,7 +522,9 @@ financial_advisor/
 │   └── general_advisor.py      # General financial guidance
 │
 ├── tools/
-│   ├── market_data.py          # yfinance: stocks, indices, crypto, forex, gold
+│   ├── live_market.py          # Live market data: yfinance (indices, gold 24K/22K/18K, forex, stocks)
+│   ├── market_prefetch.py      # Background market data pre-fetch + ticker snapshot cache
+│   ├── market_data.py          # Legacy yfinance wrappers (stocks, indices, crypto)
 │   ├── financial_calc.py       # 36 calculators (2500+ lines, cross-referenced)
 │   ├── calculator_registry.py  # Calculator definitions, validation, result caching
 │   ├── smart_calc.py           # Auto-dispatch: detects computation needs from query
@@ -505,7 +558,7 @@ curl -X POST http://localhost:8501/api/chat \
   -d '{"query": "SIP of ₹10K/month for 20 years at 12%", "agent": "auto"}'
 ```
 
-SSE events: `session`, `status`, `agent`, `token`, `done`, `error`
+SSE events: `session`, `status`, `agent`, `thinking`, `token`, `done`, `error`
 
 ### Calculator
 
@@ -523,11 +576,19 @@ curl -X POST http://localhost:8501/api/calculate \
 | `GET` | `/api/agents` | List all available agents |
 | `GET` | `/api/calculators` | List all 36 calculators with field definitions |
 | `POST` | `/api/calculate` | Run a calculator with inputs |
-| `POST` | `/api/chat` | Chat with SSE streaming |
+| `POST` | `/api/chat` | Chat with SSE streaming (includes `thinking` events) |
 | `POST` | `/api/upload` | Upload file for analysis |
 | `DELETE` | `/api/upload/{session_id}` | Clear uploaded files |
 | `DELETE` | `/api/session/{session_id}` | Clear conversation history |
 | `GET` | `/api/health` | Health check with cache stats |
+| `GET` | `/api/market/snapshot` | Full market snapshot (indices, gold, forex, rates) |
+| `GET` | `/api/market/indices` | Live Nifty 50, Sensex, Bank Nifty |
+| `GET` | `/api/market/gold` | Gold prices (24K/22K/18K per gram and per 10g) |
+| `GET` | `/api/market/forex` | USD/INR, EUR/INR, GBP/INR |
+| `GET` | `/api/market/stock/{symbol}` | Live quote for NSE/BSE stock |
+| `GET` | `/api/market/mf/{scheme_code}` | Mutual fund NAV by scheme code |
+| `GET` | `/api/market/mf/search/{query}` | Search mutual funds by name |
+| `GET` | `/api/market/rates` | FD, PPF, EPF, repo rate |
 
 ---
 
@@ -549,11 +610,18 @@ The app runs `platform_setup.py` at import time — no manual config needed:
 Override any auto-detected value:
 
 ```python
+# LLM engine settings
 LLM_CONFIG["n_ctx"] = 16384        # Force smaller context window
 LLM_CONFIG["n_gpu_layers"] = 0     # Force CPU-only mode
 LLM_CONFIG["n_threads"] = 4        # Limit threads
-LLM_CONFIG["max_tokens"] = 2048    # Shorter responses
 LLM_CONFIG["temperature"] = 0.7    # Creativity (0.0 = deterministic)
+
+# Pipeline tuning (auto-set by CPU/GPU detection, override here)
+RESPONSE_MAX_TOKENS = 2048         # Max response length
+ROUTER_MAX_TOKENS = 100            # Max router classification output
+REFLECTION_ENABLED = False         # Disable reflection loop
+THINKING_ENABLED = False           # Disable /think mode
+DEEP_RESEARCH_MAX_CHARS = 3500     # Limit web research context
 ```
 
 ---
@@ -659,8 +727,8 @@ python server.py
 | Issue | Solution |
 |-------|----------|
 | **Model download fails** | Set `export HF_TOKEN=your_token` and retry `python setup_model.py` |
-| **Slow responses** | Check GPU detection in startup log. Ensure Metal/CUDA is compiled in llama-cpp-python |
-| **Out of memory** | Reduce context: `LLM_CONFIG["n_ctx"] = 16384` in config.py. Or use partial GPU offload: `LLM_CONFIG["n_gpu_layers"] = 20` |
+| **Slow responses on CPU** | Expected — CPU mode uses a lean pipeline (no reflection, no thinking, shorter responses). Check startup log shows correct detection. On GPU, ensure Metal/CUDA is compiled in llama-cpp-python |
+| **Out of memory** | Reduce context: `LLM_CONFIG["n_ctx"] = 8192` in config.py. Or use partial GPU offload: `LLM_CONFIG["n_gpu_layers"] = 20`. CPU mode auto-uses smaller context and Q4 model |
 | **Port 8501 in use** | `kill $(lsof -ti:8501)` on macOS/Linux. `netstat -ano \| findstr :8501` on Windows |
 | **`ModuleNotFoundError`** | Activate venv: `source venv/bin/activate` then `pip install -r requirements.txt` |
 | **No GPU detected** | The app falls back to CPU automatically. Verify GPU: `nvidia-smi` (CUDA) or `system_profiler SPDisplaysDataType` (macOS) |
@@ -677,18 +745,24 @@ Every response includes a clickable ⏱ timing badge:
 
 | Metric | Description |
 |--------|-------------|
-| **Routing** | Time to classify query and select agent(s) |
+| **Routing** | Time to classify query and select agent(s) (cached after first call) |
 | **Context Gathering** | Web search + market data + deep research (parallel) |
 | **Prompt Build** | System prompt assembly + token budget trimming |
 | **TTFT** | Time to first token from LLM |
 | **Inference** | Total LLM generation time |
 | **Tokens/sec** | Generation throughput |
+| **Think Tokens** | Tokens spent on internal reasoning (complex queries, GPU only) |
 | **Total** | End-to-end wall-clock time |
 
-Typical performance on Apple M3 Pro (18 GB):
+Typical performance on Apple M3 Pro (18 GB, GPU):
 - **TTFT:** 1-3 seconds (depends on prompt length)
 - **Generation:** 15-25 tokens/sec
 - **Calculator:** <0.1ms (cached), <1ms (computed)
+
+Typical performance on CPU-only (16 GB, Intel/AMD):
+- **TTFT:** 3-8 seconds
+- **Generation:** 5-12 tokens/sec
+- **Pipeline:** Lean mode (no reflection, no thinking, shorter context)
 
 ---
 
