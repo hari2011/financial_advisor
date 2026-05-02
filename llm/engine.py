@@ -94,14 +94,39 @@ class LLMEngine:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
+            cls._instance._model_path = MODEL_PATH  # may be updated by _ensure_model
         return cls._instance
 
     def _ensure_model(self):
-        if os.path.exists(MODEL_PATH):
-            logger.info(f"Model found at {MODEL_PATH}")
+        """Find or obtain a usable GGUF model.
+
+        Search order:
+        1. Expected GGUF file at MODEL_PATH → use directly
+        2. Any GGUF file in MODEL_DIR → use it
+        3. SafeTensors/PyTorch in MODEL_DIR → auto-convert to GGUF
+        4. Nothing found → download from HuggingFace
+        """
+        if os.path.exists(self._model_path):
+            logger.info(f"Model found at {self._model_path}")
             return
+
+        # Try discovering any model in the models/ directory
         os.makedirs(MODEL_DIR, exist_ok=True)
-        logger.info(f"Downloading {MODEL_FILE} (~4.9 GB one-time download)...")
+        try:
+            from tools.model_converter import find_or_convert_model
+            from config import IS_CPU_ONLY
+            found = find_or_convert_model(MODEL_DIR, is_cpu_only=IS_CPU_ONLY)
+            if found:
+                self._model_path = found
+                logger.info(f"Using discovered model: {found}")
+                return
+        except Exception as e:
+            logger.warning(f"Model discovery failed: {e}")
+
+        # Fallback: download from HuggingFace
+        logger.info(f"No local model found. Downloading {MODEL_FILE}...")
+        print(f"\n  Downloading {MODEL_FILE} (~5 GB one-time download)...")
+        print(f"  For air-gapped use, place model files in: {MODEL_DIR}")
         from huggingface_hub import hf_hub_download
         hf_hub_download(
             repo_id=MODEL_REPO,
@@ -140,7 +165,7 @@ class LLMEngine:
         logger.info(f"KV cache: {kv_label} | Flash attn: {use_flash_attn} | Batch: {n_batch}")
 
         self.model = Llama(
-            model_path=MODEL_PATH,
+            model_path=self._model_path,
             n_ctx=LLM_CONFIG["n_ctx"],
             n_gpu_layers=LLM_CONFIG["n_gpu_layers"],
             n_threads=LLM_CONFIG["n_threads"],

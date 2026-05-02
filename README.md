@@ -6,6 +6,19 @@ All processing happens on your machine — your financial data never leaves your
 
 ---
 
+## 📖 Detailed Documentation
+
+| Document | Description |
+|----------|-------------|
+| **[Installation Guide](docs/INSTALLATION.md)** | Step-by-step setup for every platform (macOS, Linux, Windows, air-gapped) |
+| **[User Guide](docs/USER_GUIDE.md)** | How to use the chat, calculators, file upload, market ticker, and more |
+| **[Architecture Guide](docs/ARCHITECTURE.md)** | Deep dive into system design, pipeline, agents, caching, and data flow |
+| **[API Reference](docs/API_REFERENCE.md)** | Complete REST API documentation with examples |
+| **[Configuration Guide](docs/CONFIGURATION.md)** | Auto-detected settings and manual overrides |
+| **[Troubleshooting](docs/TROUBLESHOOTING.md)** | Solutions for common issues |
+
+---
+
 ## ✨ Key Highlights
 
 ### AI & LLM
@@ -78,118 +91,79 @@ All processing happens on your machine — your financial data never leaves your
 
 ## 🚀 Quick Start
 
-### Step 1 — Clone & Setup Python
+### Option A — One Command (Recommended)
 
 ```bash
 git clone <repo-url>
 cd financial_advisor
+python3 start.py
+```
 
-# Create virtual environment
+That's it. `start.py` automatically:
+1. Creates a virtual environment
+2. Installs all Python dependencies
+3. Installs llama-cpp-python with the correct GPU flags for your platform
+4. Downloads the right model (~5 GB, one-time)
+5. Launches the server
+
+Open **http://localhost:8501** and start asking questions.
+
+> If the model download is rate-limited:
+> ```bash
+> export HF_TOKEN=your_token    # macOS/Linux
+> $env:HF_TOKEN="your_token"    # Windows PowerShell
+> python3 start.py
+> ```
+
+### Option B — Manual Setup (Advanced)
+
+<details>
+<summary>Click to expand step-by-step instructions</summary>
+
+#### Step 1 — Clone & Setup Python
+
+```bash
+git clone <repo-url>
+cd financial_advisor
 python3 -m venv venv
-
-# Activate it
 source venv/bin/activate        # macOS / Linux
 # .\venv\Scripts\Activate.ps1   # Windows PowerShell
 ```
 
-### Step 2 — Install Dependencies
+#### Step 2 — Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Step 3 — Install llama-cpp-python (Platform-Specific)
+#### Step 3 — Install llama-cpp-python (Platform-Specific)
 
-This is the only step that differs by OS/GPU. Pick your platform:
-
-<details>
-<summary><strong>macOS — Apple Silicon (M1/M2/M3/M4) ✅ Recommended</strong></summary>
-
-```bash
-CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
-```
-Metal GPU acceleration enabled. All model layers offloaded to GPU.
-</details>
-
-<details>
-<summary><strong>macOS — Intel</strong></summary>
-
-```bash
-pip install llama-cpp-python --force-reinstall --no-cache-dir
-```
-CPU-only. Works but slower than Apple Silicon.
-</details>
-
-<details>
-<summary><strong>Linux — NVIDIA GPU (CUDA)</strong></summary>
-
-Requires CUDA Toolkit installed (`nvidia-smi` should work).
-
-```bash
-CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
-```
-</details>
-
-<details>
-<summary><strong>Linux — AMD GPU (Vulkan)</strong></summary>
-
-Requires Vulkan SDK installed.
-
-```bash
-CMAKE_ARGS="-DGGML_VULKAN=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
-```
-</details>
-
-<details>
-<summary><strong>Linux / macOS — CPU Only</strong></summary>
-
-```bash
-pip install llama-cpp-python --force-reinstall --no-cache-dir
-```
-</details>
-
-<details>
-<summary><strong>Windows — NVIDIA GPU (CUDA)</strong></summary>
-
-From PowerShell (requires Visual Studio Build Tools + CUDA Toolkit):
-
-```powershell
-$env:CMAKE_ARGS="-DGGML_CUDA=on"
-pip install llama-cpp-python --force-reinstall --no-cache-dir
-```
-</details>
-
-<details>
-<summary><strong>Windows — CPU Only</strong></summary>
-
-```powershell
-pip install llama-cpp-python --force-reinstall --no-cache-dir
-```
-</details>
+| Platform | Command |
+|----------|---------|
+| **macOS Apple Silicon** | `CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --force-reinstall --no-cache-dir` |
+| **macOS Intel** | `pip install llama-cpp-python --force-reinstall --no-cache-dir` |
+| **Linux NVIDIA (CUDA)** | `CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --force-reinstall --no-cache-dir` |
+| **Linux AMD (Vulkan)** | `CMAKE_ARGS="-DGGML_VULKAN=on" pip install llama-cpp-python --force-reinstall --no-cache-dir` |
+| **CPU only** | `pip install llama-cpp-python --force-reinstall --no-cache-dir` |
+| **Windows NVIDIA** | `$env:CMAKE_ARGS="-DGGML_CUDA=on"; pip install llama-cpp-python --force-reinstall --no-cache-dir` |
 
 > **Tip:** Run `python setup_model.py --help` to see the recommended command for your detected platform.
 
-### Step 4 — Download the Model
+#### Step 4 — Download the Model
 
 ```bash
 python setup_model.py
 ```
 
 Downloads **Qwen3-8B** from Hugging Face (~5.5 GB for GPU, ~4.6 GB for CPU). One-time download.
-The correct quantization (Q5_K_M for GPU, Q4_K_M for CPU) is auto-selected based on your hardware.
 
-> If rate-limited, set a Hugging Face token:
-> ```bash
-> export HF_TOKEN=your_token    # macOS/Linux
-> $env:HF_TOKEN="your_token"    # Windows PowerShell
-> python setup_model.py
-> ```
-
-### Step 5 — Launch
+#### Step 5 — Launch
 
 ```bash
 python server.py
 ```
+
+</details>
 
 Open **http://localhost:8501** in your browser. The app auto-detects your hardware:
 
@@ -208,7 +182,7 @@ Open **http://localhost:8501** in your browser. The app auto-detects your hardwa
 ╚══════════════════════════════════════════════════╝
 ```
 
-> ✅ **You're all set!** No API keys. No cloud accounts. No environment variables. Just launch and go.
+> For platform-specific instructions (macOS Intel, Linux CUDA/Vulkan, Windows, air-gapped), see the [Full Installation Guide →](docs/INSTALLATION.md)
 
 ---
 
@@ -227,14 +201,14 @@ Open **http://localhost:8501** in your browser. The app auto-detects your hardwa
 | **Insurance Advisor** | 🛡️ | Term life, health insurance, IRDAI plans, claim settlement ratios |
 | **General Advisor** | 🧠 | Catch-all financial guidance with web search |
 
-Queries are **autonomously routed** by the LLM to the best agent(s) based on intent analysis and an agent dependency graph. Multi-agent queries (e.g., "Should I prepay my home loan or invest in mutual funds?") route to multiple agents, and complex queries trigger automatic self-reflection to ensure comprehensive coverage.
+Queries are **autonomously routed** by the LLM to the best agent(s) based on intent analysis and an agent dependency graph. Multi-agent queries (e.g., "Should I prepay my home loan or invest in mutual funds?") route to multiple agents, and complex queries trigger automatic self-reflection.
 
 ---
 
 ## 🧮 36 Financial Calculators
 
-All calculators are accessible via the UI (grid view with search) and API (`POST /api/calculate`).
-Formulas are cross-referenced against Groww, ClearTax, ET Money, India Post, and 1% Club.
+All calculators accessible via UI (grid with search) and API (`POST /api/calculate`).
+Formulas cross-referenced against Groww, ClearTax, ET Money, India Post, and 1% Club.
 
 ### Investment & Savings
 | Calculator | Key Features |
@@ -298,13 +272,29 @@ Formulas are cross-referenced against Groww, ClearTax, ET Money, India Post, and
 
 ---
 
+## How It Works (Simplified)
+
+```
+Your Question
+     │
+     ▼
+┌─────────┐     ┌───────────────┐     ┌─────────────┐     ┌──────────┐
+│  Route   │────►│    Gather     │────►│    Build     │────►│ Generate │
+│  (LLM)   │     │   Context     │     │   Prompt     │     │ Response │
+└─────────┘     └───────────────┘     └─────────────┘     └──────────┘
+ Selects          Runs calculators,     Assembles           Streams tokens
+ agent(s) +       fetches market        system prompt        to your browser
+ complexity       data, web search      with /think or       in real-time
+                  (all in parallel)     /no_think
+```
+
+**For complex queries (GPU only)**: After generation, a quality check (reflection) runs. If gaps are found, the response is automatically refined.
+
+> [Full architecture guide →](docs/ARCHITECTURE.md)
+
+---
+
 ## 🏗️ Architecture
-
-### Agentic Design Philosophy
-
-FinanceGPT implements a **hybrid agentic architecture** — combining autonomous LLM decision-making with deterministic financial computation. This is a deliberate design choice: financial calculations must be **exact and reproducible** (SIP of ₹10K/month at 12% for 20 years = ₹99,91,479, every time), while the reasoning layer around them benefits from adaptive intelligence.
-
-**Why not fully autonomous agents?** In finance, a fully autonomous agent (ReAct-style) might decide to skip a tax calculation it deems "unnecessary," or compute SIP differently each time. That's dangerous when users make investment decisions based on the output. FinanceGPT separates **what to compute** (agentic, LLM-driven) from **how to compute** (deterministic, formula-verified), giving you the intelligence of an agent with the reliability of a calculator.
 
 ### LangGraph Pipeline with Conditional Edges
 
@@ -340,65 +330,43 @@ User Query
 
 | Capability | How It Works |
 |-----------|--------------|
-| **Autonomous Agent Selection** | LLM analyzes query intent and selects 1-3 specialist agents from 10 available, using an agent dependency graph that models inter-relationships, calculators, and context needs |
-| **Query Complexity Classification** | LLM classifies each query as `simple`, `moderate`, or `complex` — determining the pipeline path, tool invocation depth, and whether reflection is needed |
-| **Adaptive Tool Selection** | Simple queries (greetings, pure calculations) skip web search entirely; moderate queries get standard context; complex queries get deeper research with higher limits |
-| **LLM-Generated Search Queries** | The router generates tailored web search queries based on the selected agents' context needs — not generic keywords, but targeted information retrieval |
-| **Visible Thinking** | Complex queries on GPU trigger `/think` mode — LLM reasoning is streamed in real-time to a collapsible UI block (Claude-style), giving transparency into the AI's thought process |
-| **Self-Reflection Loop** | Complex queries on GPU trigger a post-generation quality check: a lightweight LLM evaluates whether all aspects of the query were addressed |
-| **Automatic Refinement** | If reflection detects gaps (e.g., "no comparison between old and new tax regime as asked"), the LLM generates an improved response incorporating the feedback |
-| **CPU/GPU Pipeline Tuning** | Auto-detects hardware and configures the entire pipeline: CPU gets lean mode (no reflection, no thinking, shorter responses, less context) while GPU gets the full experience |
-| **Router Response Caching** | LLM classification results are cached for 5 minutes — repeated or similar queries skip the LLM router entirely |
-| **Conditional Graph Edges** | The pipeline uses `add_conditional_edges()` — after generation, the graph dynamically routes to reflection, refinement, or directly to END based on query complexity and response quality |
-| **Agent Dependency Graph** | 10 agents with explicit `depends_on`, `calculators`, and `context_needs` — enabling intelligent routing that understands which agents handle connected topics |
-| **Session Memory** | Profile facts (income, age, risk appetite, goals) are extracted from conversations and persist across sessions via SQLite checkpointing |
+| **Autonomous Agent Selection** | LLM analyzes query intent and selects 1-3 specialist agents from 10 available, using an agent dependency graph |
+| **Query Complexity Classification** | LLM classifies each query as `simple`, `moderate`, or `complex` — determining the pipeline path and tool depth |
+| **Adaptive Tool Selection** | Simple queries skip web search; moderate get standard context; complex get deeper research |
+| **LLM-Generated Search Queries** | Router generates tailored web search queries based on selected agents' context needs |
+| **Visible Thinking** | Complex queries on GPU trigger `/think` mode — reasoning streamed in real-time (Claude-style) |
+| **Self-Reflection Loop** | Complex GPU queries trigger post-generation quality check |
+| **Automatic Refinement** | If reflection detects gaps, LLM generates an improved response |
+| **CPU/GPU Pipeline Tuning** | Auto-configures entire pipeline: CPU lean mode / GPU full mode |
+| **Router Response Caching** | Classification cached 5 min — similar queries skip the LLM router |
+| **Conditional Graph Edges** | `add_conditional_edges()` dynamically routes to reflection, refinement, or END |
+| **Agent Dependency Graph** | 10 agents with explicit `depends_on`, `calculators`, and `context_needs` |
+| **Session Memory** | Profile facts (income, age, risk appetite, goals) persist across sessions via SQLite |
 
 ### Deterministic Financial Engine
 
-The agentic layer decides **what** to compute; the financial engine guarantees **accuracy**:
-
 | Component | Role | Why Deterministic? |
 |-----------|------|-------------------|
-| **36 Calculators** | SIP, EMI, FD, PPF, NPS, FIRE, CTC, tax — all verified | Financial math must be exact: ₹1 difference in a 20-year projection = wrong advice |
-| **Smart Dispatcher** | Auto-detects computation needs from natural language | Regex-based extraction ensures every number in the query gets processed |
+| **36 Calculators** | SIP, EMI, FD, PPF, NPS, FIRE, CTC, tax — all verified | Financial math must be exact: ₹1 difference = wrong advice |
+| **Smart Dispatcher** | Auto-detects computation needs from natural language | Regex-based extraction ensures every number gets processed |
 | **Pre-computed Context** | Calculators run before LLM generates response | LLM cites pre-computed ₹ values — never hallucinates numbers |
-| **Cross-Referencing** | 53 test cases verified against Groww, ClearTax, ET Money, India Post | Production financial platforms as ground truth |
+| **Cross-Referencing** | 53 test cases vs Groww, ClearTax, ET Money, India Post | Production financial platforms as ground truth |
+
+> [Full architecture deep dive →](docs/ARCHITECTURE.md)
 
 ---
 
-## ⚡ Performance Optimizations
+## ⚡ Performance & Caching
 
-### Caching Stack
+### 5-Layer Caching Stack
 
-| Layer | Mechanism | Scope | TTL | Max Size |
-|-------|-----------|-------|-----|----------|
-| **KV Cache** | Q8_0 quantized K/V tensors in Llama | Model inference | Session | n_ctx tokens |
-| **Prompt Prefix** | Automatic via singleton — reuses KV when prefix matches | Model inference | Until prompt changes | n_ctx tokens |
-| **Flash Attention** | `flash_attn=True` in Llama constructor | Prompt prefill | N/A | N/A |
-| **Response Cache** | SHA-256 hash of messages → LRU | `generate()` only | 10 min | 64 entries |
-| **Calculator Cache** | MD5 hash of (calc_id + inputs) → LRU | `run_calculator()` | 5 min | 256 entries |
-
-### Cache Monitoring
-
-Cache stats are exposed via the health endpoint:
-
-```bash
-curl http://localhost:8501/api/health
-```
-
-```json
-{
-  "status": "ok",
-  "llm_loaded": true,
-  "agents": 10,
-  "cache": {
-    "response_cache_size": 12,
-    "response_cache_hits": 45,
-    "response_cache_misses": 67,
-    "calculator_cache_size": 8
-  }
-}
-```
+| Layer | Mechanism | TTL | Max Size |
+|-------|-----------|-----|----------|
+| **KV Cache** | Q8_0 quantized K/V tensors (GPU) / Q4_0 (CPU) | Session | n_ctx tokens |
+| **Prompt Prefix** | Automatic singleton — reuses KV for matching prefix | Until prompt changes | n_ctx tokens |
+| **Response Cache** | SHA-256 hash of messages → LRU | 10 min | 64 entries |
+| **Calculator Cache** | MD5 hash of (calc_id + inputs) → LRU | 5 min | 256 entries |
+| **Router Cache** | Normalized query → classification result | 5 min | 32 entries |
 
 ### Auto-Scaling Rules
 
@@ -421,8 +389,6 @@ curl http://localhost:8501/api/health
 
 ### CPU vs GPU Pipeline
 
-The app automatically configures the pipeline based on detected hardware:
-
 | Setting | CPU (Lean) | GPU (Full) |
 |---------|-----------|------------|
 | **Model quantization** | Q4_K_M (4.6 GB) | Q5_K_M (5.5 GB) |
@@ -439,14 +405,37 @@ The app automatically configures the pipeline based on detected hardware:
 
 ### Model Quantization
 
-The app auto-selects the model based on your hardware:
-
 | Quant | Size | Quality | Speed | When Used |
 |-------|------|---------|-------|-----------|
 | Q8_0 | ~8.5 GB | Near-lossless | Slower | Manual override only (32 GB+ RAM) |
 | **Q5_K_M** | **~5.5 GB** | **Excellent** | **Good** | **Auto-selected when GPU detected** |
 | **Q4_K_M** | **~4.6 GB** | **Good** | **Faster** | **Auto-selected on CPU-only systems** |
 | Q3_K_M | ~3.5 GB | Degraded | Fastest | Not recommended for financial advice |
+
+### Performance Benchmarks
+
+Every response includes a clickable ⏱ timing badge:
+
+| Metric | Description |
+|--------|-------------|
+| **Routing** | Time to classify query and select agent(s) (cached after first call) |
+| **Context Gathering** | Web search + market data + deep research (parallel) |
+| **Prompt Build** | System prompt assembly + token budget trimming |
+| **TTFT** | Time to first token from LLM |
+| **Inference** | Total LLM generation time |
+| **Tokens/sec** | Generation throughput |
+| **Think Tokens** | Tokens spent on internal reasoning (complex queries, GPU only) |
+| **Total** | End-to-end wall-clock time |
+
+Typical performance on Apple M3 Pro (18 GB, GPU):
+- **TTFT:** 1-3 seconds (depends on prompt length)
+- **Generation:** 15-25 tokens/sec
+- **Calculator:** <0.1ms (cached), <1ms (computed)
+
+Typical performance on CPU-only (16 GB, Intel/AMD):
+- **TTFT:** 3-8 seconds
+- **Generation:** 5-12 tokens/sec
+- **Pipeline:** Lean mode (no reflection, no thinking, shorter context)
 
 ---
 
@@ -486,65 +475,6 @@ The app auto-selects the model based on your hardware:
 | **Pipeline timing** | ⏱ Click time badge to see per-step breakdown with token speed (tok/s) |
 | **Keyboard shortcuts** | `Esc` stop, `/` focus input, `Cmd+Shift+N` new chat, `Cmd+Shift+E` export |
 | **XSS protection** | All LLM output sanitized via DOMPurify before rendering |
-
----
-
-## 📁 Project Structure
-
-```
-financial_advisor/
-├── server.py                   # FastAPI backend + SSE streaming (main entry point)
-├── app.py                      # Streamlit UI (alternative frontend)
-├── config.py                   # Model config, CPU/GPU pipeline tuning, agents, Indian market defaults
-├── platform_setup.py           # Cross-platform OS/GPU/RAM auto-detection + optimal config
-├── setup_model.py              # Model downloader + platform install guide
-├── requirements.txt            # Python dependencies
-├── test_cross_ref.py           # 53 calculator accuracy tests (Groww/ClearTax verified)
-│
-├── graph/
-│   └── workflow.py             # LangGraph agentic pipeline (conditional edges, reflection, refinement)
-│
-├── llm/
-│   └── engine.py               # LLM engine — KV Q8 cache, flash attn, response cache
-│
-├── agents/
-│   ├── base.py                 # Base agent class with auto market data + web search
-│   ├── router.py               # LLM-based query router with complexity classification & agent graph
-│   ├── stock_analyst.py        # NSE/BSE stock analysis + fundamentals
-│   ├── mutual_fund_advisor.py  # Indian mutual fund recommendations
-│   ├── portfolio_manager.py    # Portfolio allocation + rebalancing
-│   ├── tax_advisor.py          # Indian income tax (new/old regime, CTC, HRA)
-│   ├── retirement_planner.py   # SIP, PPF, NPS, FIRE planning
-│   ├── loan_advisor.py         # EMI, home loan, PMAY, prepayment
-│   ├── budget_planner.py       # Budget in ₹ with savings plan
-│   ├── crypto_analyst.py       # Crypto + India 30% tax rules
-│   ├── insurance_advisor.py    # IRDAI term + health insurance
-│   └── general_advisor.py      # General financial guidance
-│
-├── tools/
-│   ├── live_market.py          # Live market data: yfinance (indices, gold 24K/22K/18K, forex, stocks)
-│   ├── market_prefetch.py      # Background market data pre-fetch + ticker snapshot cache
-│   ├── market_data.py          # Legacy yfinance wrappers (stocks, indices, crypto)
-│   ├── financial_calc.py       # 36 calculators (2500+ lines, cross-referenced)
-│   ├── calculator_registry.py  # Calculator definitions, validation, result caching
-│   ├── smart_calc.py           # Auto-dispatch: detects computation needs from query
-│   ├── deep_research.py        # Multi-source web research with citations
-│   ├── web_search.py           # DuckDuckGo search + world briefing (thread-safe)
-│   └── file_parser.py          # CSV/PDF/Excel/JSON/TXT file parser
-│
-├── knowledge/
-│   └── indian_finance.py       # Indian finance reference data (tax slabs, 80C, etc.)
-│
-├── static/
-│   ├── index.html              # Full UI — chat, calculators, themes, streaming
-│   └── style.css               # Streamlit custom styles (app.py frontend)
-│
-├── models/                     # Downloaded .gguf model (~5.5 GB, auto-downloaded)
-├── sessions/
-│   └── checkpoints.db          # LangGraph SQLite checkpoint (auto-created)
-└── logs/
-    └── financegpt.log          # Application logs
-```
 
 ---
 
@@ -590,6 +520,8 @@ curl -X POST http://localhost:8501/api/calculate \
 | `GET` | `/api/market/mf/search/{query}` | Search mutual funds by name |
 | `GET` | `/api/market/rates` | FD, PPF, EPF, repo rate |
 
+> [Full API reference with response schemas →](docs/API_REFERENCE.md)
+
 ---
 
 ## ⚙️ Configuration
@@ -607,8 +539,6 @@ The app runs `platform_setup.py` at import time — no manual config needed:
 
 ### Manual Overrides (config.py)
 
-Override any auto-detected value:
-
 ```python
 # LLM engine settings
 LLM_CONFIG["n_ctx"] = 16384        # Force smaller context window
@@ -623,6 +553,8 @@ REFLECTION_ENABLED = False         # Disable reflection loop
 THINKING_ENABLED = False           # Disable /think mode
 DEEP_RESEARCH_MAX_CHARS = 3500     # Limit web research context
 ```
+
+> [Full configuration guide →](docs/CONFIGURATION.md)
 
 ---
 
@@ -657,20 +589,81 @@ DEEP_RESEARCH_MAX_CHARS = 3500     # Limit web research context
 - "Monthly expenses ₹50K, age 30 — show Lean/Regular/Fat/Barista/Coast FIRE numbers"
 - "How much SIP do I need for Regular FIRE by 50?"
 
+> [Tips for better answers →](docs/USER_GUIDE.md#tips-for-better-answers)
+
+---
+
+## 📁 Project Structure
+
+```
+financial_advisor/
+├── start.py                    # One-command launcher (auto-setup + run)
+├── server.py                   # FastAPI backend + SSE streaming (main entry point)
+├── app.py                      # Streamlit UI (alternative frontend)
+├── config.py                   # Model config, CPU/GPU pipeline tuning, agents, Indian market defaults
+├── platform_setup.py           # Cross-platform OS/GPU/RAM auto-detection + optimal config
+├── setup_model.py              # Model downloader + platform install guide (used by start.py)
+├── requirements.txt            # Python dependencies
+├── test_cross_ref.py           # 53 calculator accuracy tests (Groww/ClearTax verified)
+│
+├── graph/
+│   └── workflow.py             # LangGraph agentic pipeline (conditional edges, reflection, refinement)
+│
+├── llm/
+│   └── engine.py               # LLM engine — KV Q8 cache, flash attn, response cache
+│
+├── agents/
+│   ├── base.py                 # Base agent class with auto market data + web search
+│   ├── router.py               # LLM-based query router with complexity classification & agent graph
+│   ├── stock_analyst.py        # NSE/BSE stock analysis + fundamentals
+│   ├── mutual_fund_advisor.py  # Indian mutual fund recommendations
+│   ├── portfolio_manager.py    # Portfolio allocation + rebalancing
+│   ├── tax_advisor.py          # Indian income tax (new/old regime, CTC, HRA)
+│   ├── retirement_planner.py   # SIP, PPF, NPS, FIRE planning
+│   ├── loan_advisor.py         # EMI, home loan, PMAY, prepayment
+│   ├── budget_planner.py       # Budget in ₹ with savings plan
+│   ├── crypto_analyst.py       # Crypto + India 30% tax rules
+│   ├── insurance_advisor.py    # IRDAI term + health insurance
+│   └── general_advisor.py      # General financial guidance
+│
+├── tools/
+│   ├── live_market.py          # Live market data: yfinance (indices, gold 24K/22K/18K, forex, stocks)
+│   ├── market_prefetch.py      # Background market data pre-fetch + ticker snapshot cache
+│   ├── market_data.py          # Legacy yfinance wrappers (stocks, indices, crypto)
+│   ├── financial_calc.py       # 36 calculators (2500+ lines, cross-referenced)
+│   ├── calculator_registry.py  # Calculator definitions, validation, result caching
+│   ├── smart_calc.py           # Auto-dispatch: detects computation needs from query
+│   ├── deep_research.py        # Multi-source web research with citations
+│   ├── web_search.py           # DuckDuckGo search + world briefing (thread-safe)
+│   ├── file_parser.py          # CSV/PDF/Excel/JSON/TXT file parser
+│   └── model_converter.py      # SafeTensors/PyTorch → GGUF auto-conversion
+│
+├── knowledge/
+│   └── indian_finance.py       # Indian finance reference data (tax slabs, 80C, etc.)
+│
+├── static/
+│   ├── index.html              # Full UI — chat, calculators, themes, streaming
+│   ├── style.css               # Dark/light theme styles
+│   └── logo.svg                # App logo
+│
+├── models/                     # Downloaded .gguf model (~5.5 GB, auto-downloaded)
+├── sessions/                   # SQLite databases (checkpoints, session metadata)
+├── uploads/                    # User file uploads
+└── docs/                       # Detailed documentation
+    ├── INSTALLATION.md         # Platform-specific setup guide
+    ├── USER_GUIDE.md           # Usage guide + calculator reference
+    ├── ARCHITECTURE.md         # System design deep dive
+    ├── API_REFERENCE.md        # REST API documentation
+    ├── CONFIGURATION.md        # Settings + tuning guide
+    └── TROUBLESHOOTING.md      # Common issues + fixes
+```
+
 ---
 
 ## ✅ Testing & Accuracy
 
-### Cross-Reference Test Suite
-
-All 36 calculators are verified against production financial platforms:
-
 ```bash
-python test_cross_ref.py
-```
-
-```
-53/53 cross-reference checks passed
+python test_cross_ref.py     # 53/53 cross-reference checks passed
 ```
 
 | Source | What's Verified |
@@ -696,76 +689,6 @@ python test_cross_ref.py
 
 ---
 
-## 🔄 Deploying on Another Machine
-
-```bash
-# 1. Copy the project (excluding large/generated files)
-rsync -av --exclude='models/' --exclude='sessions/' --exclude='logs/' \
-  --exclude='uploads/' --exclude='__pycache__/' --exclude='venv/' \
-  financial_advisor/ user@host:~/financial_advisor/
-
-# 2. On the target machine
-cd ~/financial_advisor
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-
-# 3. Install llama-cpp-python (platform-specific — see Step 3 above)
-python setup_model.py --help    # shows the right command for your OS
-
-# 4. Download the model (~5.5 GB one-time)
-python setup_model.py
-
-# 5. Launch
-python server.py
-# Open http://localhost:8501
-```
-
----
-
-## 🛠️ Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| **Model download fails** | Set `export HF_TOKEN=your_token` and retry `python setup_model.py` |
-| **Slow responses on CPU** | Expected — CPU mode uses a lean pipeline (no reflection, no thinking, shorter responses). Check startup log shows correct detection. On GPU, ensure Metal/CUDA is compiled in llama-cpp-python |
-| **Out of memory** | Reduce context: `LLM_CONFIG["n_ctx"] = 8192` in config.py. Or use partial GPU offload: `LLM_CONFIG["n_gpu_layers"] = 20`. CPU mode auto-uses smaller context and Q4 model |
-| **Port 8501 in use** | `kill $(lsof -ti:8501)` on macOS/Linux. `netstat -ano \| findstr :8501` on Windows |
-| **`ModuleNotFoundError`** | Activate venv: `source venv/bin/activate` then `pip install -r requirements.txt` |
-| **No GPU detected** | The app falls back to CPU automatically. Verify GPU: `nvidia-smi` (CUDA) or `system_profiler SPDisplaysDataType` (macOS) |
-| **Windows cmake errors** | Install Visual Studio Build Tools + CMake. Try the pre-built wheel from [llama-cpp-python releases](https://github.com/abetlen/llama-cpp-python/releases) |
-| **Market data not loading** | Requires internet connection. Check firewall/proxy settings |
-| **Flash attention warning** | Safe to ignore if your llama-cpp-python build doesn't support it — falls back gracefully |
-| **Calculator tests fail** | Run `python test_cross_ref.py` — should be 53/53. If not, check recent changes to `financial_calc.py` |
-
----
-
-## 📊 Performance Benchmarks
-
-Every response includes a clickable ⏱ timing badge:
-
-| Metric | Description |
-|--------|-------------|
-| **Routing** | Time to classify query and select agent(s) (cached after first call) |
-| **Context Gathering** | Web search + market data + deep research (parallel) |
-| **Prompt Build** | System prompt assembly + token budget trimming |
-| **TTFT** | Time to first token from LLM |
-| **Inference** | Total LLM generation time |
-| **Tokens/sec** | Generation throughput |
-| **Think Tokens** | Tokens spent on internal reasoning (complex queries, GPU only) |
-| **Total** | End-to-end wall-clock time |
-
-Typical performance on Apple M3 Pro (18 GB, GPU):
-- **TTFT:** 1-3 seconds (depends on prompt length)
-- **Generation:** 15-25 tokens/sec
-- **Calculator:** <0.1ms (cached), <1ms (computed)
-
-Typical performance on CPU-only (16 GB, Intel/AMD):
-- **TTFT:** 3-8 seconds
-- **Generation:** 5-12 tokens/sec
-- **Pipeline:** Lean mode (no reflection, no thinking, shorter context)
-
----
-
 ## 📦 Dependencies
 
 | Package | Purpose |
@@ -782,6 +705,40 @@ Typical performance on CPU-only (16 GB, Intel/AMD):
 | `beautifulsoup4` | HTML parsing for deep research |
 | `PyMuPDF` + `pdfplumber` | PDF parsing for file uploads |
 | `openpyxl` + `xlrd` | Excel file parsing |
+
+---
+
+## 🔄 Deploying on Another Machine
+
+```bash
+# Copy the project (excluding large/generated files)
+rsync -av --exclude='models/' --exclude='sessions/' --exclude='logs/' \
+  --exclude='uploads/' --exclude='__pycache__/' --exclude='venv/' \
+  financial_advisor/ user@host:~/financial_advisor/
+
+# On the target machine — one command does everything
+cd ~/financial_advisor
+python3 start.py
+```
+
+For air-gapped environments (no internet), see [Air-Gapped Installation →](docs/INSTALLATION.md#air-gapped--offline-installation)
+
+---
+
+## 🛠️ Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| **Model download fails** | Set `export HF_TOKEN=your_token` and retry `python setup_model.py` |
+| **Slow responses on CPU** | Expected — CPU lean pipeline (no reflection, no thinking). Check startup banner for GPU detection |
+| **Out of memory** | Reduce context: `LLM_CONFIG["n_ctx"] = 8192` in config.py |
+| **Port 8501 in use** | `kill $(lsof -ti:8501)` on macOS/Linux |
+| **`ModuleNotFoundError`** | Activate venv: `source venv/bin/activate` then `pip install -r requirements.txt` |
+| **No GPU detected** | The app falls back to CPU. Verify: `nvidia-smi` (CUDA) or `system_profiler SPDisplaysDataType` (macOS) |
+| **Build tools missing** | `pip install llama-cpp-python --prefer-binary` or install cmake + compiler |
+| **Flash attention warning** | Safe to ignore — falls back gracefully |
+
+> [Full troubleshooting guide →](docs/TROUBLESHOOTING.md)
 
 ---
 
