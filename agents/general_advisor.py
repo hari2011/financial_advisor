@@ -127,14 +127,9 @@ FORMAT: Use PRE-COMPUTED data. ₹ Lakhs/Crores. Bullets and tables for data poi
                 for n in news[:3]:
                     context_parts.append(f"  • [{n.get('source', '')}] {n.get('title', '')}: {n.get('snippet', '')}")
 
-        # Targeted web search derived from user query
+        # Targeted web search — only for topics NOT covered by live APIs
+        # Gold, silver, forex, crude, FD/PPF rates → handled by _auto_market_data() below
         topic_searches = {
-            ("gold", "gold rate", "gold price", "sona"): "gold rate price India today",
-            ("silver", "silver rate", "chandi"): "silver rate price India today",
-            ("dollar", "usd", "forex", "exchange rate"): "USD INR dollar rate today",
-            ("crude", "oil price", "petrol", "diesel"): "crude oil price India today",
-            ("ppf", "epf", "provident"): "PPF EPF interest rate",
-            ("fd", "fixed deposit"): "fixed deposit FD rates India",
             ("nps", "pension"): "NPS returns tier 1",
             ("sgb", "sovereign"): "sovereign gold bond SGB India",
             ("budget", "union budget"): "India union budget highlights",

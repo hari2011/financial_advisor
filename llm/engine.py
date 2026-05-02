@@ -12,6 +12,15 @@ from config import MODEL_PATH, LLM_CONFIG, MODEL_DIR, MODEL_REPO, MODEL_FILE
 
 logger = logging.getLogger("financegpt.llm")
 
+
+def _get_response_max_tokens() -> int:
+    """Get max response tokens — respects CPU/GPU pipeline tuning."""
+    try:
+        from config import RESPONSE_MAX_TOKENS
+        return RESPONSE_MAX_TOKENS
+    except ImportError:
+        return LLM_CONFIG["max_tokens"]
+
 # ──────────────────────── Response Cache ────────────────────────
 # LRU cache for generate() — exact match on (system_prompt + context + query + history).
 # Streaming bypasses cache (users expect live tokens). Classify bypasses too (fast already).
@@ -187,7 +196,7 @@ class LLMEngine:
             temperature=LLM_CONFIG["temperature"],
             top_p=LLM_CONFIG["top_p"],
             top_k=LLM_CONFIG.get("top_k", 40),
-            max_tokens=LLM_CONFIG["max_tokens"],
+            max_tokens=_get_response_max_tokens(),
             repeat_penalty=LLM_CONFIG["repeat_penalty"],
         )
 
@@ -207,7 +216,8 @@ class LLMEngine:
 
     def generate_stream(self, system_prompt: str, user_message: str,
                         context: str = "", history: list = None):
-        """Stream tokens from the LLM one at a time. Yields (token_text, is_final) tuples."""
+        """Stream tokens from the LLM. Yields (token_text, kind) tuples.
+        kind is 'think' for internal reasoning, 'visible' for response content."""
         self.initialize()
         messages = self._build_messages(system_prompt, user_message, context, history)
 
@@ -215,8 +225,9 @@ class LLMEngine:
         logger.info(f"Streaming response | messages={len(messages)} | total_chars={total_chars}")
         t0 = time.time()
         token_count = 0
+        think_token_count = 0
 
-        # Track and strip <think> blocks from streamed output
+        # Track <think> blocks — stream them as 'think' kind instead of suppressing
         in_think_block = False
         think_buffer = ""
 
@@ -225,32 +236,51 @@ class LLMEngine:
             temperature=LLM_CONFIG["temperature"],
             top_p=LLM_CONFIG["top_p"],
             top_k=LLM_CONFIG.get("top_k", 40),
-            max_tokens=LLM_CONFIG["max_tokens"],
+            max_tokens=_get_response_max_tokens(),
             repeat_penalty=LLM_CONFIG["repeat_penalty"],
             stream=True,
         ):
             delta = chunk["choices"][0].get("delta", {})
             content = delta.get("content", "")
             if content:
-                token_count += 1
-                # Filter out <think>...</think> blocks in streaming
                 if "<think>" in content:
                     in_think_block = True
                     think_buffer = content
+                    think_token_count += 1
+                    # Yield any content after the <think> tag as think tokens
+                    after_open = content.split("<think>", 1)[1]
+                    if after_open:
+                        yield (after_open, "think")
                     continue
                 if in_think_block:
                     think_buffer += content
+                    think_token_count += 1
                     if "</think>" in think_buffer:
-                        # Emit anything after the closing tag
-                        after = think_buffer.split("</think>", 1)[1]
+                        # Yield text before </think> as think, text after as visible
+                        if "</think>" in content:
+                            before_close = content.split("</think>", 1)[0]
+                            after_close = content.split("</think>", 1)[1]
+                        else:
+                            before_close = ""
+                            after_close = think_buffer.split("</think>", 1)[1]
+                        if before_close.strip():
+                            yield (before_close, "think")
                         in_think_block = False
                         think_buffer = ""
-                        if after.strip():
-                            yield after
+                        if after_close.strip():
+                            token_count += 1
+                            yield (after_close, "visible")
+                    else:
+                        # Still in think block — stream as think
+                        yield (content, "think")
                     continue
-                yield content
+                token_count += 1
+                yield (content, "visible")
 
-        logger.info(f"Stream completed in {time.time()-t0:.1f}s | tokens_out={token_count}")
+        think_str = f" | think_tokens={think_token_count}" if think_token_count else ""
+        logger.info(f"Stream completed in {time.time()-t0:.1f}s | "
+                     f"visible_tokens={token_count}{think_str} | "
+                     f"total_tokens={token_count + think_token_count}")
 
     def classify(self, query: str, categories: dict) -> str:
         self.initialize()

@@ -2,6 +2,8 @@
 import json
 import logging
 import re
+import time
+from functools import lru_cache
 from agents.base import BaseAgent
 from config import ROUTER_MODE
 
@@ -164,80 +166,46 @@ def _build_graph_description() -> str:
     """Format AGENT_GRAPH into a compact string for the LLM prompt."""
     lines = []
     for agent, info in AGENT_GRAPH.items():
-        deps = ", ".join(info["depends_on"]) if info["depends_on"] else "none"
         calcs = ", ".join(info["calculators"]) if info["calculators"] else "none"
-        needs = "; ".join(info["context_needs"][:3])
-        lines.append(f"  {agent}: depends_on=[{deps}] | calcs=[{calcs}] | needs: {needs}")
+        lines.append(f"  {agent}: calcs=[{calcs}]")
     return "\n".join(lines)
 
 
-_COMBINED_PROMPT = """You are a financial query router. Analyze the query and return a JSON object with THREE fields:
-
+_COMBINED_PROMPT = """Analyze the query and return a JSON object with THREE fields:
 1. "agents": Array of 1-3 agent keys (most relevant first)
-2. "search_queries": Array of 0-3 web search query strings tailored to find information the selected agents need
-3. "complexity": One of "simple", "moderate", or "complex"
+2. "search_queries": Array of 0-3 web search strings
+3. "complexity": "simple" | "moderate" | "complex"
 
-COMPLEXITY RULES:
-- "simple": Greetings (hi, hello, thanks), single calculator queries (calculate EMI for 50L), direct factual lookups (gold price today), single-concept questions. These need MINIMAL or NO web search.
-- "moderate": Standard financial advice queries involving one domain with context needs (tax planning for 15L salary, SIP for retirement). These need web search for current data.
-- "complex": Multi-domain queries (prepay loan vs invest?), comparative analysis, comprehensive financial planning, queries with multiple sub-questions. These need thorough research.
+COMPLEXITY: simple=greetings/calculator/factual lookup (0 searches), moderate=standard advice (1-2 searches), complex=multi-domain/comparison (2-3 searches)
 
-SEARCH QUERY RULES based on complexity:
-- "simple": 0 search queries (calculator/factual — no web search needed)
-- "moderate": 1-2 targeted search queries
-- "complex": 2-3 comprehensive search queries
-
-AVAILABLE AGENTS:
+AGENTS:
 {agent_list}
 
-AGENT DEPENDENCY GRAPH (shows inter-relationships, calculators, and context needs):
+AGENT TOOLS:
 {agent_graph}
 
-HOW TO USE THE GRAPH:
-- Each agent has "depends_on" showing related agents that handle connected topics.
-- Each agent has "calculators" it uses internally (you don't need to pick agents for these — the agent handles them).
-- Each agent has "context_needs" showing what information it requires to give a good answer.
-- Use "context_needs" of the SELECTED agents to generate targeted search queries.
-- Do NOT add dependent agents unless the user's query explicitly covers their domain too.
-- budget_planner handles CTC→take-home internally via its calculators — do NOT add tax_advisor for simple budget queries.
-
-ROUTING RULES:
-- PREFER FEWER agents (1 is ideal, 2-3 only for genuinely multi-domain queries).
-- "how much should I earn" / "cost of living" / "plan my budget" → ["budget_planner"] ONLY.
-- tax calculation / regime comparison → ["tax_advisor"] ONLY.
-- SIP / retirement / corpus → ["retirement_planner"] ONLY.
-- loan EMI / prepayment → ["loan_advisor"] ONLY.
-- stock analysis → ["stock_analyst"], add "portfolio_manager" only if allocation advice needed.
-- gold/silver/dollar price → ["general_advisor"].
-- Multi-domain: "should I prepay loan OR invest?" → ["loan_advisor", "portfolio_manager"].
-
-SEARCH QUERY RULES:
-- Generate 0-3 concise, specific search queries based on complexity (see above).
-- Tailor queries to what the SELECTED agents need (see "context_needs").
-- Include India-specific terms, city names, time period (2025/2026) where relevant.
-- Do NOT generate duplicate or overlapping queries.
-- Make queries factual and searchable (not questions, not conversational).
+RULES:
+- Prefer 1 agent. Use 2-3 only for genuinely multi-domain queries.
+- budget_planner handles CTC→take-home internally — don't add tax_advisor for budget queries.
+- gold/silver/dollar/FD → general_advisor.
 
 EXAMPLES:
-Query: "Hi, how are you?"
-→ {{"agents": ["general_advisor"], "search_queries": [], "complexity": "simple"}}
-
-Query: "Calculate EMI for ₹50 lakh home loan at 8.5% for 20 years"
-→ {{"agents": ["loan_advisor"], "search_queries": [], "complexity": "simple"}}
-
-Query: "I want to live a decent life in Chennai with family of 5, how much should I earn?"
-→ {{"agents": ["budget_planner"], "search_queries": ["Chennai cost of living family of 5 monthly expenses 2026", "Chennai rent school fees groceries transport expenses India"], "complexity": "moderate"}}
-
-Query: "Should I prepay my home loan or invest in mutual funds?"
-→ {{"agents": ["loan_advisor", "mutual_fund_advisor"], "search_queries": ["home loan prepayment vs mutual fund SIP comparison India 2026", "current home loan interest rates India 2026"], "complexity": "complex"}}
-
-Query: "What's the gold price today?"
-→ {{"agents": ["general_advisor"], "search_queries": ["gold price India today per gram 24 carat"], "complexity": "simple"}}
-
-Return ONLY valid JSON, no other text.
+"Hi" → {{"agents":["general_advisor"],"search_queries":[],"complexity":"simple"}}
+"EMI for ₹50L at 8.5% 20yr" → {{"agents":["loan_advisor"],"search_queries":[],"complexity":"simple"}}
+"Prepay loan or invest?" → {{"agents":["loan_advisor","mutual_fund_advisor"],"search_queries":["home loan prepayment vs SIP India 2026"],"complexity":"complex"}}
 
 Query: "{query}"
 """
+
+# ── Router response cache (avoids re-classifying similar queries) ──
+_router_cache = {}  # normalized_query -> (result_dict, timestamp)
+_ROUTER_CACHE_TTL = 300  # 5 minutes
+_ROUTER_CACHE_MAX = 32
+
+
+def _normalize_query(q: str) -> str:
+    """Normalize query for cache lookup — lowercase, strip punctuation, collapse whitespace."""
+    return re.sub(r'\s+', ' ', re.sub(r'[^\w\s]', '', q.lower())).strip()
 
 
 def _llm_classify_and_search(query: str) -> dict:
@@ -248,7 +216,19 @@ def _llm_classify_and_search(query: str) -> dict:
       - "search_queries": list of tailored search query strings
 
     Falls back to empty dict on failure.
+    Uses a short-lived cache to avoid repeated LLM calls for similar queries.
     """
+    # Check cache first
+    cache_key = _normalize_query(query)
+    cached = _router_cache.get(cache_key)
+    if cached:
+        result, ts = cached
+        if time.time() - ts < _ROUTER_CACHE_TTL:
+            logger.info(f"Router cache hit: {result.get('agents')}")
+            return result
+        else:
+            del _router_cache[cache_key]
+
     from llm.engine import llm
     llm.initialize()
 
@@ -263,6 +243,7 @@ def _llm_classify_and_search(query: str) -> dict:
     )
 
     try:
+        from config import ROUTER_MAX_TOKENS
         response = llm.model.create_chat_completion(
             messages=[
                 {"role": "system", "content": "You are a precise JSON router. Return ONLY a JSON object with 'agents', 'search_queries', and 'complexity' fields. /no_think"},
@@ -270,7 +251,7 @@ def _llm_classify_and_search(query: str) -> dict:
             ],
             temperature=0.05,
             top_p=0.9,
-            max_tokens=300,
+            max_tokens=ROUTER_MAX_TOKENS,
             repeat_penalty=1.0,
         )
         raw = response["choices"][0]["message"]["content"].strip()
@@ -311,6 +292,13 @@ def _llm_classify_and_search(query: str) -> dict:
             "complexity": complexity,
         }
         logger.info(f"LLM classified → agents={valid_agents}, complexity={complexity}, queries={len(valid_queries)}")
+
+        # Store in cache (evict oldest if full)
+        if len(_router_cache) >= _ROUTER_CACHE_MAX:
+            oldest_key = min(_router_cache, key=lambda k: _router_cache[k][1])
+            del _router_cache[oldest_key]
+        _router_cache[cache_key] = (result, time.time())
+
         return result
 
     except Exception as e:
@@ -327,21 +315,31 @@ def _llm_classify(query: str) -> list:
 
 # ──────────────────────── Keyword fast-path ────────────────────────
 
-def _keyword_fast_path(query: str) -> list[str] | None:
+def _keyword_fast_path(query: str) -> tuple[list[str], str] | None:
     """Fast keyword classification for clearly single-domain queries.
 
-    Returns list of agent keys if the query unambiguously matches ONE domain.
+    Returns (list of agent keys, complexity) if the query unambiguously matches ONE domain.
     Returns None to fall through to LLM classification for ambiguous queries.
-    Saves ~5s by avoiding an LLM inference call on obvious queries.
+    Saves ~3-8s by avoiding an LLM inference call on obvious queries.
     """
     q = query.lower()
+
+    # ── Greetings / trivial ──
+    _greetings = ["hi", "hello", "hey", "thanks", "thank you", "good morning",
+                  "good evening", "good afternoon", "bye", "ok", "okay", "sure",
+                  "who are you", "what can you do", "help"]
+    if any(q.strip() == g or q.strip().startswith(g + " ") or q.strip().startswith(g + ",")
+           for g in _greetings):
+        return ["general_advisor"], "simple"
 
     hits = set()
 
     # Budget / earning / expense queries
     if any(p in q for p in ["budget", "how much should i earn", "how much do i need to earn",
                              "how much to earn", "cost of living", "decent life",
-                             "monthly expense", "expense breakdown", "spending plan"]):
+                             "monthly expense", "expense breakdown", "spending plan",
+                             "plan my salary", "salary breakdown", "save money",
+                             "50-30-20", "50 30 20", "emergency fund"]):
         hits.add("budget_planner")
 
     # Tax queries
@@ -355,48 +353,81 @@ def _keyword_fast_path(query: str) -> list[str] | None:
 
     # Stock queries
     if any(p in q for p in ["stock", "share price", "nifty", "sensex", "ipo",
-                             "dividend", "earnings"]):
+                             "dividend", "earnings", "nse", "bse", "fii", "dii",
+                             "buy.*share", "sell.*share"]):
         hits.add("stock_analyst")
 
     # Loan queries
     if any(p in q for p in ["home loan", "car loan", "personal loan", "education loan",
-                             "loan emi", "cibil", "prepay loan", "loan interest"]):
+                             "loan emi", "cibil", "prepay loan", "loan interest",
+                             "emi for", "emi calculator", "calculate emi",
+                             "loan eligibility", "repo rate"]):
         hits.add("loan_advisor")
 
-    # Retirement queries
-    if any(p in q for p in ["retire", "retirement", "pension", "corpus plan"]):
+    # Retirement / SIP queries
+    if any(p in q for p in ["retire", "retirement", "pension", "corpus plan",
+                             "sip", "step up sip", "step-up sip", "ppf", "nps",
+                             "epf", "fire number", "lumpsum vs sip", "sip vs lumpsum"]):
         hits.add("retirement_planner")
 
     # Crypto queries
-    if any(p in q for p in ["bitcoin", "ethereum", "crypto", "altcoin"]):
+    if any(p in q for p in ["bitcoin", "ethereum", "crypto", "altcoin", "vda tax"]):
         hits.add("crypto_analyst")
 
     # Insurance queries
     if any(p in q for p in ["term insurance", "health insurance", "life insurance",
-                             "claim settlement"]):
+                             "claim settlement", "insurance premium", "mediclaim"]):
         hits.add("insurance_advisor")
 
     # Mutual fund queries
-    if any(p in q for p in ["mutual fund", "elss", "fund nav", "amc"]):
+    if any(p in q for p in ["mutual fund", "elss", "fund nav", "amc",
+                             "index fund", "flexi cap", "large cap fund",
+                             "mid cap fund", "small cap fund", "direct plan",
+                             "regular plan"]):
         hits.add("mutual_fund_advisor")
 
     # Portfolio queries
-    if any(p in q for p in ["portfolio", "asset allocation", "rebalance"]):
+    if any(p in q for p in ["portfolio", "asset allocation", "rebalance",
+                             "diversif"]):
         hits.add("portfolio_manager")
 
     # Gold/commodity prices → general
     if any(p in q for p in ["gold price", "silver price", "dollar rate", "fd rate",
-                             "rbi policy"]):
+                             "rbi policy", "gold rate", "forex rate",
+                             "crude oil price", "commodity price"]):
         hits.add("general_advisor")
 
-    # Only fast-path when exactly ONE domain matches (unambiguous)
+    # Standalone concept questions (only if no other agent matched)
+    if not hits and any(p in q for p in ["what is", "explain", "meaning of",
+                                          "define", "how does"]):
+        hits.add("general_advisor")
+
+    # ── Determine complexity for fast-path matches ──
     if len(hits) == 1:
         agent_key = hits.pop()
-        logger.info(f"Keyword fast-path → [{agent_key}]")
-        return [agent_key]
+        # Simple: direct lookups, single calculations, factual questions
+        _simple_patterns = ["price", "rate", "calculate", "emi for", "what is",
+                           "how much is", "today", "current", "explain", "meaning",
+                           "define", "sip for"]
+        if any(p in q for p in _simple_patterns) and len(q) < 100:
+            complexity = "simple"
+        elif len(q) > 200 or any(p in q for p in ["compare", "vs", "versus",
+                                                     "should i", "better",
+                                                     "which is", "pros and cons"]):
+            complexity = "complex"
+        else:
+            complexity = "moderate"
+        logger.info(f"Keyword fast-path → [{agent_key}] complexity={complexity}")
+        return [agent_key], complexity
 
-    if len(hits) > 1:
-        logger.info(f"Keyword fast-path: multi-domain ({hits}), deferring to LLM")
+    if len(hits) == 2:
+        # Two-domain queries are typically complex
+        agents = list(hits)
+        logger.info(f"Keyword fast-path (multi) → {agents} complexity=complex")
+        return agents, "complex"
+
+    if len(hits) > 2:
+        logger.info(f"Keyword fast-path: too many domains ({hits}), deferring to LLM")
 
     return None  # Ambiguous or no clear signal — use LLM
 
@@ -423,9 +454,10 @@ def route_query(query: str, manual_agent: str = None) -> tuple[list, list, str]:
     if ROUTER_MODE == "keyword_first":
         fast = _keyword_fast_path(query)
         if fast:
-            result = [(key, AGENT_REGISTRY[key]) for key in fast]
-            logger.info(f"Fast-path routed to: {[r[0] for r in result]}")
-            return result, [], "moderate"  # Keyword path defaults to moderate
+            agent_keys, complexity = fast
+            result = [(key, AGENT_REGISTRY[key]) for key in agent_keys]
+            logger.info(f"Fast-path routed to: {[r[0] for r in result]}, complexity={complexity}")
+            return result, [], complexity
 
     else:
         logger.info(f"Router mode: {ROUTER_MODE} — skipping keyword fast-path")

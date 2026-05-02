@@ -41,6 +41,27 @@ LLM_CONFIG["top_p"] = 0.8
 LLM_CONFIG["top_k"] = 20
 LLM_CONFIG["repeat_penalty"] = 1.15
 
+# ──────────────────────── Pipeline Tuning (CPU vs GPU) ────────────────────────
+# These control how much work the pipeline does at each stage.
+# CPU users get a leaner pipeline to keep response times reasonable.
+
+if IS_CPU_ONLY:
+    # CPU: faster routing, shorter responses, skip reflection
+    ROUTER_MAX_TOKENS = 100          # router output is ~60-80 tokens
+    RESPONSE_MAX_TOKENS = 1536       # shorter responses for speed
+    REFLECTION_ENABLED = False       # skip reflection+refinement (~10-20s saved)
+    DEEP_RESEARCH_MAX_CHARS = 3500   # less web context to process
+    THINKING_ENABLED = False         # disable /think mode (doubles output on CPU)
+    CONTEXT_BUDGET_RESERVE = 200     # tokens reserved for overhead
+else:
+    # GPU: full pipeline, longer responses, reflection for complex queries
+    ROUTER_MAX_TOKENS = 150
+    RESPONSE_MAX_TOKENS = LLM_CONFIG["max_tokens"]  # 2048 or 4096
+    REFLECTION_ENABLED = True
+    DEEP_RESEARCH_MAX_CHARS = 7000
+    THINKING_ENABLED = True
+    CONTEXT_BUDGET_RESERVE = 100
+
 # ──────────────────────── Router Configuration ────────────────────────
 # Controls how user queries are classified to the right agent(s).
 #   "keyword_first"  — Try fast keyword matching first, fall back to LLM (fastest)

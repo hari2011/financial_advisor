@@ -387,6 +387,91 @@ async def calculate(request: Request):
     return result
 
 
+# ──────────────────────── Live Market Data API ────────────────────────
+
+@app.get("/api/market/snapshot")
+async def market_snapshot():
+    """Get comprehensive market snapshot — indices, gold, forex, commodities, rates.
+    Uses pre-cached data if available (instant), falls back to live fetch."""
+    from tools.market_prefetch import get_market_snapshot_cached
+    from tools.live_market import get_market_snapshot
+
+    # Try pre-cached first (instant)
+    snapshot = get_market_snapshot_cached()
+    if not snapshot:
+        # Fallback: live fetch (may take 2-5s on first call)
+        snapshot = await asyncio.to_thread(get_market_snapshot)
+    return snapshot
+
+
+@app.get("/api/market/indices")
+async def market_indices():
+    """Get live Indian market indices (Nifty 50, Sensex, Bank Nifty, etc)."""
+    from tools.live_market import get_indices
+    return await asyncio.to_thread(get_indices)
+
+
+@app.get("/api/market/gold")
+async def market_gold():
+    """Get live gold price in INR per gram and per 10g."""
+    from tools.live_market import get_gold_price_inr
+    result = await asyncio.to_thread(get_gold_price_inr)
+    if not result:
+        return JSONResponse({"error": "Gold price unavailable"}, status_code=503)
+    return result
+
+
+@app.get("/api/market/forex")
+async def market_forex():
+    """Get live forex rates (USD/INR, EUR/INR, GBP/INR)."""
+    from tools.live_market import get_forex
+    return await asyncio.to_thread(get_forex)
+
+
+@app.get("/api/market/stock/{symbol}")
+async def market_stock(symbol: str):
+    """Get live stock quote for an NSE/BSE stock.
+    Example: /api/market/stock/RELIANCE"""
+    from tools.live_market import get_stock_quote
+    result = await asyncio.to_thread(get_stock_quote, symbol)
+    if not result:
+        return JSONResponse(
+            {"error": f"Stock '{symbol}' not found. Use NSE symbol (e.g., RELIANCE, TCS, INFY)"},
+            status_code=404,
+        )
+    return result
+
+
+@app.get("/api/market/mf/{scheme_code}")
+async def market_mutual_fund(scheme_code: str):
+    """Get latest NAV for a mutual fund by AMFI scheme code.
+    Example: /api/market/mf/119551"""
+    from tools.live_market import get_mutual_fund_nav
+    result = await asyncio.to_thread(get_mutual_fund_nav, scheme_code)
+    if not result:
+        return JSONResponse(
+            {"error": f"Mutual fund scheme '{scheme_code}' not found"},
+            status_code=404,
+        )
+    return result
+
+
+@app.get("/api/market/mf/search/{query}")
+async def market_mf_search(query: str):
+    """Search mutual funds by name. Returns list of matching schemes.
+    Example: /api/market/mf/search/hdfc+flexi+cap"""
+    from tools.live_market import search_mutual_fund
+    results = await asyncio.to_thread(search_mutual_fund, query)
+    return results
+
+
+@app.get("/api/market/rates")
+async def market_rates():
+    """Get current FD, PPF, EPF, and savings scheme interest rates."""
+    from tools.live_market import get_fd_rates
+    return get_fd_rates()
+
+
 @app.get("/api/health")
 async def health():
     from llm.engine import llm, _response_cache

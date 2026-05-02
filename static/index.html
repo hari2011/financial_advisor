@@ -694,6 +694,142 @@
             min-width: 0;
         }
 
+        /* ── Market Ticker Bar ── */
+        .market-ticker {
+            display: flex;
+            align-items: center;
+            height: 36px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            overflow: hidden;
+            position: relative;
+            font-size: 12px;
+            font-variant-numeric: tabular-nums;
+        }
+        .ticker-label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0 12px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.7px;
+            color: var(--accent);
+            white-space: nowrap;
+            flex-shrink: 0;
+            border-right: 1px solid var(--border);
+            height: 100%;
+            background: rgba(99,102,241,0.04);
+        }
+        .ticker-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--green);
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        .ticker-track {
+            flex: 1;
+            display: flex;
+            gap: 0;
+            overflow: hidden;
+            mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+            -webkit-mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+        }
+        .ticker-scroll {
+            display: flex;
+            gap: 0;
+            animation: ticker-scroll 40s linear infinite;
+            will-change: transform;
+        }
+        .ticker-scroll:hover {
+            animation-play-state: paused;
+        }
+        @keyframes ticker-scroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+        .ticker-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0 16px;
+            white-space: nowrap;
+            color: var(--text-secondary);
+            border-right: 1px solid var(--border);
+            height: 36px;
+            cursor: default;
+            transition: background 0.15s;
+        }
+        .ticker-item:hover {
+            background: var(--bg-hover);
+        }
+        .ticker-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 11px;
+        }
+        .ticker-price {
+            font-weight: 500;
+        }
+        .ticker-change {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 1px 5px;
+            border-radius: 4px;
+        }
+        .ticker-change.up {
+            color: var(--green);
+            background: rgba(34,197,94,0.1);
+        }
+        .ticker-change.down {
+            color: var(--red);
+            background: rgba(239,68,68,0.1);
+        }
+        .ticker-change.flat {
+            color: var(--text-muted);
+            background: var(--bg-tertiary);
+        }
+        .ticker-updated {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0 12px;
+            font-size: 10px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            flex-shrink: 0;
+            border-left: 1px solid var(--border);
+            height: 100%;
+            cursor: pointer;
+            transition: color 0.15s;
+        }
+        .ticker-updated:hover {
+            color: var(--accent);
+        }
+        .ticker-loading {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 11px;
+            gap: 6px;
+        }
+        .ticker-loading .spinner-tiny {
+            width: 12px; height: 12px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
         /* ── Chat Messages ── */
         .chat-area {
             flex: 1;
@@ -1018,6 +1154,79 @@
             font-size: 11px;
             color: var(--text-muted);
             margin-top: 4px;
+        }
+        .elapsed-time {
+            margin-left: auto;
+            font-size: 11px;
+            color: var(--text-muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* ── Thinking block (LLM reasoning — like Claude) ── */
+        .thinking-block {
+            margin-bottom: 8px;
+            border: 1px solid rgba(99,102,241,0.15);
+            border-radius: 8px;
+            overflow: hidden;
+            animation: fadeIn 0.3s;
+        }
+        .thinking-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: linear-gradient(135deg, rgba(99,102,241,0.06), rgba(99,102,241,0.02));
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-secondary);
+            user-select: none;
+            transition: background 0.2s;
+        }
+        .thinking-header:hover {
+            background: linear-gradient(135deg, rgba(99,102,241,0.10), rgba(99,102,241,0.04));
+        }
+        .think-toggle {
+            font-size: 10px;
+            transition: transform 0.2s;
+            display: inline-block;
+        }
+        .thinking-header.collapsed .think-toggle {
+            transform: rotate(-90deg);
+        }
+        .thinking-content {
+            padding: 10px 14px;
+            font-size: 12.5px;
+            line-height: 1.65;
+            color: var(--text-muted);
+            max-height: 250px;
+            overflow-y: auto;
+            border-top: 1px solid rgba(99,102,241,0.08);
+            white-space: pre-wrap;
+            word-break: break-word;
+            scrollbar-width: thin;
+        }
+        .thinking-content.collapsed {
+            display: none;
+        }
+        .thinking-dots-inline {
+            display: inline-flex;
+            gap: 3px;
+            margin-left: 2px;
+        }
+        .thinking-dots-inline span {
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: bounce 1.4s ease-in-out infinite;
+        }
+        .thinking-dots-inline span:nth-child(2) { animation-delay: 0.2s; }
+        .thinking-dots-inline span:nth-child(3) { animation-delay: 0.4s; }
+        .think-time {
+            margin-left: auto;
+            font-size: 11px;
+            color: var(--text-muted);
+            font-variant-numeric: tabular-nums;
         }
 
         /* ── Streaming cursor ── */
@@ -1881,6 +2090,19 @@
                 </div>
             </div>
         </header>
+
+        <!-- Market Ticker Bar -->
+        <div class="market-ticker" id="marketTicker">
+            <div class="ticker-label"><span class="ticker-dot"></span> LIVE</div>
+            <div class="ticker-loading" id="tickerLoading"><div class="spinner-tiny"></div> Loading market data...</div>
+            <div class="ticker-track" id="tickerTrack" style="display:none">
+                <div class="ticker-scroll" id="tickerScroll"></div>
+            </div>
+            <div class="ticker-updated" id="tickerUpdated" onclick="refreshTicker()" title="Click to refresh" style="display:none">
+                <span id="tickerTime"></span> ↻
+            </div>
+        </div>
+
         <div class="chat-area" id="chatArea">
             <div class="message-wrapper" id="messages">
                 <!-- Welcome screen -->
@@ -2086,11 +2308,19 @@
             statusEl.className = 'thinking-indicator';
             statusEl.innerHTML = `
                 <div class="thinking-dots"><span></span><span></span><span></span></div>
-                <div>
+                <div style="flex:1">
                     <div>Analyzing your query...</div>
                     <div class="thinking-stage" id="stage-detail">Routing to specialist agents</div>
-                </div>`;
+                </div>
+                <span class="elapsed-time">0s</span>`;
             contentEl.appendChild(statusEl);
+
+            // Elapsed timer — updates every second
+            const sendTime = Date.now();
+            let elapsedTimer = setInterval(() => {
+                const el = statusEl.querySelector('.elapsed-time');
+                if (el) el.textContent = Math.round((Date.now() - sendTime) / 1000) + 's';
+            }, 1000);
 
             // Streaming text container (hidden until tokens arrive)
             const streamEl = document.createElement('div');
@@ -2101,6 +2331,11 @@
             let rawText = '';
             let renderThrottle = null;
             let timingData = null;
+            let thinkingBlock = null;
+            let thinkingContent = '';
+            let thinkStartTime = null;
+            let visibleTokenCount = 0;
+            let tokenStartTime = null;
 
             try {
                 const res = await fetch('/api/chat', {
@@ -2187,16 +2422,77 @@
                                     }
                                     break;
 
+                                case 'thinking':
+                                    // LLM internal reasoning — show in collapsible thinking block
+                                    if (!thinkingBlock) {
+                                        thinkingBlock = document.createElement('div');
+                                        thinkingBlock.className = 'thinking-block';
+                                        thinkingBlock.innerHTML = `
+                                            <div class="thinking-header">
+                                                <span class="think-toggle">▼</span>
+                                                <span class="think-label">Thinking</span>
+                                                <span class="thinking-dots-inline"><span></span><span></span><span></span></span>
+                                                <span class="think-time"></span>
+                                            </div>
+                                            <div class="thinking-content"></div>`;
+                                        thinkingBlock.querySelector('.thinking-header').addEventListener('click', function() {
+                                            this.classList.toggle('collapsed');
+                                            this.nextElementSibling.classList.toggle('collapsed');
+                                            const arrow = this.querySelector('.think-toggle');
+                                            arrow.textContent = this.classList.contains('collapsed') ? '▶' : '▼';
+                                        });
+                                        contentEl.insertBefore(thinkingBlock, streamEl);
+                                        statusEl.style.display = 'none';
+                                        thinkStartTime = Date.now();
+                                    }
+                                    thinkingContent += data.t;
+                                    const tc = thinkingBlock.querySelector('.thinking-content');
+                                    tc.textContent = thinkingContent;
+                                    tc.scrollTop = tc.scrollHeight;
+                                    // Update think time live
+                                    if (thinkStartTime) {
+                                        const secs = ((Date.now() - thinkStartTime) / 1000).toFixed(0);
+                                        thinkingBlock.querySelector('.think-time').textContent = secs + 's';
+                                    }
+                                    scrollToBottom();
+                                    break;
+
                                 case 'token':
                                     // On first token, switch from thinking indicator to stream area
                                     if (!rawText) {
                                         statusEl.style.display = 'none';
                                         streamEl.style.display = 'block';
+                                        if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+                                        tokenStartTime = Date.now();
+                                        // Collapse thinking block if it exists
+                                        if (thinkingBlock) {
+                                            const header = thinkingBlock.querySelector('.thinking-header');
+                                            const thinkContent = thinkingBlock.querySelector('.thinking-content');
+                                            const dots = thinkingBlock.querySelector('.thinking-dots-inline');
+                                            const timeEl = thinkingBlock.querySelector('.think-time');
+                                            const label = thinkingBlock.querySelector('.think-label');
+                                            header.classList.add('collapsed');
+                                            thinkContent.classList.add('collapsed');
+                                            header.querySelector('.think-toggle').textContent = '▶';
+                                            if (dots) dots.remove();
+                                            if (thinkStartTime && label) {
+                                                const secs = ((Date.now() - thinkStartTime) / 1000).toFixed(1);
+                                                label.textContent = 'Thought for ' + secs + 's';
+                                                if (timeEl) timeEl.textContent = '';
+                                            }
+                                        }
                                     }
                                     rawText += data.t;
+                                    visibleTokenCount++;
                                     if (!renderThrottle) {
                                         renderThrottle = setTimeout(() => {
-                                            streamEl.innerHTML = renderMarkdown(rawText) + '<span class="streaming-dot"></span>';
+                                            let speedHint = '';
+                                            if (tokenStartTime && visibleTokenCount > 5) {
+                                                const elapsed = (Date.now() - tokenStartTime) / 1000;
+                                                const speed = (visibleTokenCount / elapsed).toFixed(1);
+                                                speedHint = `<span style="display:block;font-size:11px;color:var(--text-muted);margin-top:4px;text-align:right">${visibleTokenCount} tokens · ${speed} tok/s</span>`;
+                                            }
+                                            streamEl.innerHTML = renderMarkdown(rawText) + '<span class="streaming-dot"></span>' + speedHint;
                                             renderThrottle = null;
                                             scrollToBottom();
                                         }, 60);
@@ -2213,14 +2509,26 @@
                                     streamEl.innerHTML = '';
                                     streamEl.style.display = 'none';
                                     statusEl.style.display = '';
+                                    visibleTokenCount = 0;
+                                    tokenStartTime = null;
                                     break;
 
                                 case 'done':
                                     // Stream finished — render final markdown
                                     if (renderThrottle) { clearTimeout(renderThrottle); renderThrottle = null; }
+                                    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
                                     streamEl.remove();
                                     statusEl.remove();
+                                    // Preserve thinking block if it exists
+                                    const savedThinkBlock = thinkingBlock;
+                                    if (savedThinkBlock && savedThinkBlock.parentNode) {
+                                        savedThinkBlock.remove();
+                                    }
                                     contentEl.innerHTML = renderMarkdown(rawText);
+                                    // Re-insert thinking block at the top of the response
+                                    if (savedThinkBlock) {
+                                        contentEl.insertBefore(savedThinkBlock, contentEl.firstChild);
+                                    }
                                     // Highlight code blocks
                                     contentEl.querySelectorAll('pre code').forEach(block => {
                                         if (typeof hljs !== 'undefined') hljs.highlightElement(block);
@@ -2295,6 +2603,9 @@
                                             if (timingData.tokens_out) {
                                                 html += `<div class="timing-row"><span class="timing-label">Tokens Generated</span><span class="timing-value">${timingData.tokens_out}</span></div>`;
                                             }
+                                            if (timingData.think_tokens) {
+                                                html += `<div class="timing-row"><span class="timing-label">Thinking Tokens</span><span class="timing-value">${timingData.think_tokens}</span></div>`;
+                                            }
                                             if (timingData.tokens_per_sec) {
                                                 html += `<div class="timing-row"><span class="timing-label">Speed</span><span class="timing-value">${timingData.tokens_per_sec} tok/s</span></div>`;
                                             }
@@ -2310,6 +2621,7 @@
                                     break;
 
                                 case 'error':
+                                    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
                                     statusEl.className = 'status-bar error';
                                     statusEl.innerHTML = `❌ ${data.message}`;
                                     statusEl.style.display = 'flex';
@@ -2322,10 +2634,14 @@
 
                 // If we got tokens but no 'done' event, render what we have
                 if (renderThrottle) { clearTimeout(renderThrottle); }
+                if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
                 if (rawText && streamEl.parentNode) {
+                    const savedTB = thinkingBlock;
+                    if (savedTB && savedTB.parentNode) savedTB.remove();
                     streamEl.remove();
                     if (statusEl.parentNode) statusEl.remove();
                     contentEl.innerHTML = renderMarkdown(rawText);
+                    if (savedTB) contentEl.insertBefore(savedTB, contentEl.firstChild);
                     contentEl.querySelectorAll('pre code').forEach(block => {
                         if (typeof hljs !== 'undefined') hljs.highlightElement(block);
                     });
@@ -2339,13 +2655,17 @@
                 }
 
             } catch (e) {
+                if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
                 if (e.name === 'AbortError') {
                     // User stopped generation — render what we have
                     if (renderThrottle) { clearTimeout(renderThrottle); }
                     if (rawText) {
+                        const savedTB2 = thinkingBlock;
+                        if (savedTB2 && savedTB2.parentNode) savedTB2.remove();
                         streamEl.remove();
                         if (statusEl.parentNode) statusEl.remove();
                         contentEl.innerHTML = renderMarkdown(rawText);
+                        if (savedTB2) contentEl.insertBefore(savedTB2, contentEl.firstChild);
                         contentEl.querySelectorAll('pre code').forEach(block => {
                             if (typeof hljs !== 'undefined') hljs.highlightElement(block);
                         });
@@ -3286,9 +3606,134 @@
             }
         }
 
+        // ── Market Ticker ──
+        let tickerData = null;
+        let tickerInterval = null;
+
+        function formatTickerItems(snapshot) {
+            const items = [];
+            // Indices
+            if (snapshot.indices) {
+                for (const [, idx] of Object.entries(snapshot.indices)) {
+                    if (idx && idx.price) {
+                        items.push({
+                            name: idx.name || '',
+                            price: idx.price.toLocaleString('en-IN', {maximumFractionDigits: 0}),
+                            change_pct: idx.change_pct || 0,
+                        });
+                    }
+                }
+            }
+            // Gold (show 24K and 22K in ticker)
+            if (snapshot.gold && snapshot.gold.price_per_10g_24k) {
+                items.push({
+                    name: 'Gold 24K/10g',
+                    price: '₹' + snapshot.gold.price_per_10g_24k.toLocaleString('en-IN', {maximumFractionDigits: 0}),
+                    change_pct: snapshot.gold.change_pct || 0,
+                });
+                items.push({
+                    name: 'Gold 22K/10g',
+                    price: '₹' + snapshot.gold.price_per_10g_22k.toLocaleString('en-IN', {maximumFractionDigits: 0}),
+                    change_pct: snapshot.gold.change_pct || 0,
+                });
+            }
+            // Forex
+            if (snapshot.forex) {
+                for (const [, fx] of Object.entries(snapshot.forex)) {
+                    if (fx && fx.price) {
+                        items.push({
+                            name: fx.name || '',
+                            price: '₹' + fx.price.toFixed(2),
+                            change_pct: fx.change_pct || 0,
+                        });
+                    }
+                }
+            }
+            // Commodities
+            if (snapshot.commodities) {
+                for (const [, c] of Object.entries(snapshot.commodities)) {
+                    if (c && c.price) {
+                        items.push({
+                            name: c.name || '',
+                            price: '$' + c.price.toLocaleString('en-US', {maximumFractionDigits: 2}),
+                            change_pct: c.change_pct || 0,
+                        });
+                    }
+                }
+            }
+            return items;
+        }
+
+        function renderTicker(items) {
+            const scroll = document.getElementById('tickerScroll');
+            const track = document.getElementById('tickerTrack');
+            const loading = document.getElementById('tickerLoading');
+            const updated = document.getElementById('tickerUpdated');
+            if (!items.length) return;
+
+            let html = '';
+            // Duplicate items for seamless loop
+            const allItems = [...items, ...items];
+            for (const item of allItems) {
+                const pct = item.change_pct;
+                const cls = pct > 0.01 ? 'up' : pct < -0.01 ? 'down' : 'flat';
+                const sign = pct > 0 ? '+' : '';
+                html += `<div class="ticker-item">
+                    <span class="ticker-name">${item.name}</span>
+                    <span class="ticker-price">${item.price}</span>
+                    <span class="ticker-change ${cls}">${sign}${pct.toFixed(2)}%</span>
+                </div>`;
+            }
+            scroll.innerHTML = html;
+
+            // Adjust animation speed based on content width
+            requestAnimationFrame(() => {
+                const halfWidth = scroll.scrollWidth / 2;
+                const speed = Math.max(25, halfWidth / 50); // ~50px/s
+                scroll.style.animationDuration = speed + 's';
+            });
+
+            loading.style.display = 'none';
+            track.style.display = 'flex';
+            updated.style.display = 'flex';
+
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-IN', {hour: '2-digit', minute: '2-digit'});
+            document.getElementById('tickerTime').textContent = timeStr;
+        }
+
+        async function fetchTicker() {
+            try {
+                const res = await fetch('/api/market/snapshot');
+                if (!res.ok) return;
+                tickerData = await res.json();
+                const items = formatTickerItems(tickerData);
+                renderTicker(items);
+            } catch (e) {
+                console.warn('Ticker fetch failed:', e);
+            }
+        }
+
+        function refreshTicker() {
+            const updated = document.getElementById('tickerUpdated');
+            updated.innerHTML = '<div class="spinner-tiny"></div> ...';
+            fetchTicker().then(() => {
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('en-IN', {hour: '2-digit', minute: '2-digit'});
+                updated.innerHTML = `<span id="tickerTime">${timeStr}</span> ↻`;
+            });
+        }
+
+        function startTicker() {
+            fetchTicker();
+            // Refresh every 5 minutes
+            tickerInterval = setInterval(fetchTicker, 5 * 60 * 1000);
+        }
+
         // ── Boot ──
         loadAgents();
         loadSessions();
+        startTicker();
         // Prefetch calculator count for sidebar badge
         fetch('/api/calculators').then(r => r.json()).then(data => {
             calcData = data;

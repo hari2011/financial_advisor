@@ -207,8 +207,9 @@ def compute_optimal_config(gpu: GPUInfo, ram_mb: int, cpu_threads: int) -> dict:
     # Max tokens: scale with context
     max_tokens = 4096 if n_ctx >= 16384 else 2048
 
-    # Batch size: smaller on CPU to reduce memory pressure
-    n_batch = 256 if is_cpu_only else 512
+    # Batch size: larger batches = faster prompt processing (prefill)
+    # GPU can handle large batches efficiently; CPU needs moderate batches
+    n_batch = 512 if is_cpu_only else 1024
 
     return {
         "n_ctx": n_ctx,
@@ -252,6 +253,7 @@ def print_system_info():
         f"║  Max Output  : {OPTIMAL_CONFIG['max_tokens']:,} tokens",
         f"║  Batch Size  : {OPTIMAL_CONFIG['n_batch']}",
         f"║  Threads     : {OPTIMAL_CONFIG['n_threads']}",
+        f"║  Pipeline    : {'CPU-optimized (lean)' if GPU.backend == 'cpu' else 'GPU-accelerated (full)'}",
         "╚══════════════════════════════════════════════════╝",
     ]
     for line in lines:

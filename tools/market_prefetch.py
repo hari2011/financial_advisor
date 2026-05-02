@@ -187,3 +187,24 @@ def is_prefetch_ready() -> bool:
     with _prefetch_lock:
         return bool(_prefetch_cache["text"] and
                     (time.time() - _prefetch_cache["ts"]) < _PREFETCH_TTL)
+
+
+def get_market_snapshot_cached() -> dict | None:
+    """Get a structured market snapshot from live APIs.
+    Returns cached data if fresh, None otherwise.
+    The ticker bar calls this for instant data."""
+    from tools.live_market import get_market_snapshot, _cache, _cache_lock
+
+    # Check if live_market has cached data (any key with a fresh timestamp)
+    with _cache_lock:
+        if _cache:
+            # At least some data is cached — return full snapshot
+            # (get_market_snapshot will use cached values internally)
+            pass
+        else:
+            return None
+
+    try:
+        return get_market_snapshot()
+    except Exception:
+        return None

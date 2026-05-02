@@ -256,9 +256,12 @@ class BaseAgent:
             return f"News search unavailable: {e}"
 
     def _auto_market_data(self, query: str) -> str:
-        """Detect if query needs live market data and fetch relevant prices/rates."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        from tools.market_data import get_stock_price, get_forex_rate, get_gold_silver_price
+        """Detect if query needs live market data and fetch from cached live APIs.
+        Uses tools/live_market.py which has in-memory caching (instant on repeat calls)."""
+        from tools.live_market import (
+            get_gold_price_inr, get_indices, get_forex,
+            get_commodities, get_fd_rates,
+        )
 
         q = query.lower()
         parts = []
@@ -266,6 +269,7 @@ class BaseAgent:
         # Determine which data to fetch
         gold_kw = ["gold", "sona", "sovereign gold", "sgb", "gold rate",
                     "gold price", "jewel", "22 carat", "24 carat", "hallmark"]
+        silver_kw = ["silver", "chandi"]
         idx_kw = ["nifty", "sensex", "market today", "stock market", "share market",
                   "market crash", "market rally", "bull market", "bear market"]
         fx_kw = ["dollar", "usd", "forex", "exchange rate", "usd/inr",
@@ -277,86 +281,71 @@ class BaseAgent:
                   "diesel price", "fuel price"]
 
         need_gold = any(w in q for w in gold_kw)
-        need_silver = need_gold and any(w in q for w in ["silver", "chandi"])
+        need_silver = any(w in q for w in silver_kw)
         need_idx = any(w in q for w in idx_kw)
         need_fx = any(w in q for w in fx_kw)
         need_oil = any(w in q for w in oil_kw)
         need_rates = any(w in q for w in rate_kw)
 
-        # Fire all independent yfinance calls in parallel
-        futures = {}
-        with ThreadPoolExecutor(max_workers=5, thread_name_prefix="mktdata") as pool:
+        try:
             if need_gold:
-                futures[pool.submit(get_gold_silver_price)] = "gold"
+                gold = get_gold_price_inr()
+                if gold:
+                    parts.append(
+                        f"LIVE GOLD PRICES (per 10g):\n"
+                        f"  24K: ₹{gold['price_per_10g_24k']:,.0f} (₹{gold['price_per_gram_24k']:,.0f}/g) — pure gold, investment grade\n"
+                        f"  22K: ₹{gold['price_per_10g_22k']:,.0f} (₹{gold['price_per_gram_22k']:,.0f}/g) — standard jewelry gold in India\n"
+                        f"  18K: ₹{gold['price_per_10g_18k']:,.0f} (₹{gold['price_per_gram_18k']:,.0f}/g) — premium jewelry\n"
+                        f"  International: ${gold['price_per_oz_usd']:,.2f}/troy oz | "
+                        f"USD/INR: {gold['usd_inr_rate']:.2f}"
+                    )
+
+            if need_silver:
+                commodities = get_commodities()
+                silver = commodities.get("Silver")
+                if silver:
+                    # Convert USD/oz to INR/kg
+                    forex = get_forex()
+                    usd_inr = forex.get("USD/INR", {}).get("rate", 84)
+                    silver_inr_kg = round(silver["price"] * usd_inr / 31.1035 * 1000, 0)
+                    parts.append(
+                        f"LIVE SILVER PRICE: ₹{silver_inr_kg:,.0f}/kg | "
+                        f"${silver['price']:,.2f}/troy oz"
+                    )
+
             if need_idx:
-                futures[pool.submit(get_stock_price, "^NSEI")] = "nifty"
-                futures[pool.submit(get_stock_price, "^BSESN")] = "sensex"
+                indices = get_indices()
+                for name in ["Nifty 50", "Sensex", "Bank Nifty"]:
+                    idx = indices.get(name)
+                    if idx:
+                        chg = f" ({idx['change_pct']:+.2f}%)" if idx.get('change_pct') else ""
+                        parts.append(f"LIVE {name.upper()}: {idx['price']:,.2f}{chg}")
+
             if need_fx:
-                futures[pool.submit(get_forex_rate, "USD", "INR")] = "usdinr"
+                forex = get_forex()
+                for pair, data in forex.items():
+                    if data:
+                        parts.append(f"LIVE {pair}: ₹{data['rate']:.2f}")
+
             if need_oil:
-                futures[pool.submit(get_stock_price, "CL=F")] = "crude"
+                commodities = get_commodities()
+                crude = commodities.get("Crude Oil")
+                if crude:
+                    chg = f" ({crude['change_pct']:+.2f}%)" if crude.get('change_pct') else ""
+                    parts.append(f"LIVE CRUDE OIL (WTI): ${crude['price']:,.2f}/barrel{chg}")
+
             if need_rates:
-                from tools.web_search import web_search
-                futures[pool.submit(web_search, "India RBI repo rate FD rate PPF rate latest 2026", 3)] = "rates"
-
-        results = {}
-        for future in as_completed(futures):
-            tag = futures[future]
-            try:
-                results[tag] = future.result()
-            except Exception:
-                pass
-
-        # Format results
-        if "gold" in results:
-            data = results["gold"]
-            if data.get("gold_usd") and data.get("usd_inr_rate"):
-                usd_inr = data["usd_inr_rate"]
-                gold_inr_10g = round(data["gold_usd"] * usd_inr / 31.1035 * 10, 0)
-                gold_inr_1g = round(gold_inr_10g / 10, 0)
-                parts.append(
-                    f"LIVE GOLD PRICE: ₹{gold_inr_10g:,.0f}/10g (24K) | "
-                    f"₹{gold_inr_1g:,.0f}/g | ${data['gold_usd']:,.2f}/troy oz | "
-                    f"USD/INR: {usd_inr}"
-                )
-            if need_silver and data.get("silver_usd") and data.get("usd_inr_rate"):
-                silver_inr_kg = round(data["silver_usd"] * data["usd_inr_rate"] / 31.1035 * 1000, 0)
-                parts.append(
-                    f"LIVE SILVER PRICE: ₹{silver_inr_kg:,.0f}/kg | "
-                    f"${data['silver_usd']:,.2f}/troy oz"
-                )
-
-        if "nifty" in results:
-            nifty = results["nifty"]
-            if "error" not in nifty:
-                parts.append(f"LIVE NIFTY 50: {nifty['price']:,.2f} ({nifty['change_pct']:+.2f}%)")
-        if "sensex" in results:
-            sensex = results["sensex"]
-            if "error" not in sensex:
-                parts.append(f"LIVE SENSEX: {sensex['price']:,.2f} ({sensex['change_pct']:+.2f}%)")
-
-        if "usdinr" in results:
-            usdinr = results["usdinr"]
-            if "error" not in usdinr:
-                parts.append(f"LIVE USD/INR: ₹{usdinr['rate']}")
-
-        if "rates" in results:
-            rate_data = results["rates"]
-            if rate_data and "error" not in rate_data[0]:
-                parts.append("LATEST RATE DATA:")
-                for r in rate_data[:2]:
-                    parts.append(f"  • {r.get('title', '')}: {r.get('snippet', '')}")
-
-        if "crude" in results:
-            crude = results["crude"]
-            if "error" not in crude:
-                parts.append(
-                    f"LIVE CRUDE OIL (WTI): ${crude['price']:,.2f}/barrel "
-                    f"({crude['change_pct']:+.2f}%)"
-                )
+                rates = get_fd_rates()
+                rate_lines = []
+                for name, val in rates.items():
+                    rate_lines.append(f"  {name}: {val}%")
+                if rate_lines:
+                    parts.append("CURRENT INTEREST RATES:\n" + "\n".join(rate_lines))
+        except Exception as e:
+            logger.warning(f"[{self.name}] Live market data error: {e}")
 
         if parts:
-            logger.info(f"[{self.name}] Auto-fetched live market data: {len(parts)} items")
+            logger.info(f"[{self.name}] Live market data: {len(parts)} items (from cached APIs)")
 
         return "\n".join(parts) if parts else ""
 

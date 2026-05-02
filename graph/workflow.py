@@ -196,8 +196,12 @@ def gather_context_node(state: dict) -> dict:
     all_contexts = []
 
     # ── Inject pre-cached market briefing (instant, no network call) ──
-    # Skip for simple queries (greetings, pure calculations)
-    if complexity != "simple":
+    # Always inject for market-related queries; skip only for greetings/pure math
+    _market_kw = ["gold", "silver", "nifty", "sensex", "market", "stock", "share",
+                  "dollar", "forex", "crude", "oil", "rate", "price", "fd", "ppf",
+                  "epf", "today", "current", "latest", "live", "sona", "chandi"]
+    _is_market_query = any(w in query.lower() for w in _market_kw)
+    if complexity != "simple" or _is_market_query:
         from tools.market_prefetch import get_market_briefing
         prefetch_briefing = get_market_briefing()
         if prefetch_briefing:
@@ -223,8 +227,9 @@ def gather_context_node(state: dict) -> dict:
 
     def _deep_research():
         from tools.deep_research import deep_research
+        from config import DEEP_RESEARCH_MAX_CHARS
         sq = state.get("search_queries")  # LLM-generated queries from router
-        max_chars = 7000 if complexity == "complex" else 5000
+        max_chars = DEEP_RESEARCH_MAX_CHARS if complexity != "complex" else min(DEEP_RESEARCH_MAX_CHARS + 2000, 7000)
         return _timed("deep_research", lambda: deep_research(
             query, max_context_chars=max_chars, search_queries=sq or None))
 
@@ -269,10 +274,10 @@ def gather_context_node(state: dict) -> dict:
             except Exception as e:
                 logger.warning(f"{tag} failed: {e}")
 
-        # Deep research fallback to shallow search
+        # Deep research fallback to shallow search (skip for simple queries)
         if deep_research_result:
             all_contexts.append(deep_research_result)
-        else:
+        elif complexity != "simple":
             try:
                 from tools.web_search import query_web_context
                 web_ctx = query_web_context(query)
@@ -377,9 +382,10 @@ def build_prompt_node(state: dict) -> dict:
         history_messages.append({"role": "assistant", "content": resp})
 
     # Token budget check
+    from config import RESPONSE_MAX_TOKENS, CONTEXT_BUDGET_RESERVE
     max_ctx = LLM_CONFIG["n_ctx"]
-    max_response = LLM_CONFIG["max_tokens"]
-    available_chars = int((max_ctx - max_response - 100) * 3.5)
+    max_response = RESPONSE_MAX_TOKENS
+    available_chars = int((max_ctx - max_response - CONTEXT_BUDGET_RESERVE) * 3.5)
     hist_chars = sum(len(m["content"]) for m in history_messages)
     total_chars = len(system_prompt) + len(context) + len(query) + hist_chars
 
@@ -416,6 +422,14 @@ def build_prompt_node(state: dict) -> dict:
             remaining = available_chars - len(context) - len(query) - hist_chars
             if len(system_prompt) > remaining:
                 system_prompt = system_prompt[:remaining - 100] + "\n[... prompt trimmed ...]\n"
+
+    # ── Thinking mode directive ──
+    complexity = state.get("complexity", "moderate")
+    from config import THINKING_ENABLED
+    if THINKING_ENABLED and complexity == "complex":
+        system_prompt += "\nThink step-by-step before answering (keep reasoning under 200 words). /think"
+    else:
+        system_prompt += " /no_think"
 
     return {
         "system_prompt": system_prompt,
@@ -607,7 +621,11 @@ def _route_after_generate(state: dict) -> str:
     """Decide whether to reflect on the response or go straight to END.
     
     Only complex queries go through reflection — simple/moderate skip it.
+    Reflection is disabled on CPU to save time.
     """
+    from config import REFLECTION_ENABLED
+    if not REFLECTION_ENABLED:
+        return "__end__"
     complexity = state.get("complexity", "moderate")
     if complexity == "complex" and not state.get("refinement_done"):
         return "reflect"
@@ -720,6 +738,24 @@ async def stream_workflow(
     timings = {}  # step -> seconds
     pipeline_start = time.time()
 
+    # Pre-warm: kick off market prefetch in background while routing runs
+    # This overlaps I/O with the LLM router call, saving 1-2s
+    _prefetch_future = None
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        _warmup_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="warmup")
+        def _warm_market():
+            try:
+                from tools.market_prefetch import is_prefetch_ready
+                if not is_prefetch_ready():
+                    from tools.market_prefetch import _run_prefetch
+                    _run_prefetch()
+            except Exception:
+                pass
+        _prefetch_future = _warmup_pool.submit(_warm_market)
+    except Exception:
+        pass
+
     # Step 1: Route
     yield {"event": "status", "data": {"step": "routing", "message": "Analyzing your query..."}}
     t_step = time.time()
@@ -764,13 +800,13 @@ async def stream_workflow(
 
     def _run_stream():
         try:
-            for token in llm.generate_stream(
+            for token_data in llm.generate_stream(
                 input_state["system_prompt"],
                 input_state["query"],
                 input_state["context"],
                 input_state.get("history_messages", []),
             ):
-                token_queue.put(token)
+                token_queue.put(token_data)  # (text, kind) tuple
             token_queue.put(None)  # sentinel
         except Exception as e:
             stream_error[0] = e
@@ -780,15 +816,22 @@ async def stream_workflow(
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _run_stream)
 
+    think_token_count = 0
+
     while True:
-        token = await asyncio.to_thread(token_queue.get, True, 120.0)
-        if token is None:
+        token_data = await asyncio.to_thread(token_queue.get, True, 120.0)
+        if token_data is None:
             break
-        token_count += 1
-        if ttft is None:
-            ttft = round(time.time() - t0, 2)
-        full_response.append(token)
-        yield {"event": "token", "data": {"t": token}}
+        text, kind = token_data
+        if kind == "think":
+            think_token_count += 1
+            yield {"event": "thinking", "data": {"t": text}}
+        else:
+            token_count += 1
+            if ttft is None:
+                ttft = round(time.time() - t0, 2)
+            full_response.append(text)
+            yield {"event": "token", "data": {"t": text}}
 
     if stream_error[0]:
         yield {"event": "error", "data": {"message": str(stream_error[0])}}
@@ -800,12 +843,14 @@ async def stream_workflow(
     timings["inference"] = inference_time
     timings["ttft"] = ttft or 0
     timings["tokens_out"] = token_count
+    timings["think_tokens"] = think_token_count
     if inference_time > 0 and token_count > 0:
         timings["tokens_per_sec"] = round(token_count / inference_time, 1)
 
-    # ── Step 5: Reflection + Refinement (complex queries only) ──
+    # ── Step 5: Reflection + Refinement (complex queries only, GPU only) ──
+    from config import REFLECTION_ENABLED
     complexity = input_state.get("complexity", "moderate")
-    if complexity == "complex":
+    if REFLECTION_ENABLED and complexity == "complex":
         yield {"event": "status", "data": {"step": "reflecting", "message": "Reviewing response quality..."}}
         t_step = time.time()
 
@@ -850,13 +895,13 @@ async def stream_workflow(
 
             def _run_refine_stream():
                 try:
-                    for token in llm.generate_stream(
+                    for token_data in llm.generate_stream(
                         refinement_prompt,
                         input_state["query"],
                         augmented_context,
                         input_state.get("history_messages", []),
                     ):
-                        token_queue_refine.put(token)
+                        token_queue_refine.put(token_data)
                     token_queue_refine.put(None)
                 except Exception as e:
                     stream_error[0] = e
@@ -865,14 +910,17 @@ async def stream_workflow(
             loop.run_in_executor(None, _run_refine_stream)
 
             while True:
-                token = await asyncio.to_thread(token_queue_refine.get, True, 120.0)
-                if token is None:
+                token_data = await asyncio.to_thread(token_queue_refine.get, True, 120.0)
+                if token_data is None:
                     break
+                text, kind = token_data
+                if kind == "think":
+                    continue  # Skip think tokens in refinement pass
                 token_count += 1
                 if ttft is None:
                     ttft = round(time.time() - t0_refine, 2)
-                full_response.append(token)
-                yield {"event": "token", "data": {"t": token}}
+                full_response.append(text)
+                yield {"event": "token", "data": {"t": text}}
 
             if stream_error[0]:
                 yield {"event": "error", "data": {"message": str(stream_error[0])}}
