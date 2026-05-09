@@ -35,6 +35,8 @@ After launching (`python3 start.py` or `python server.py`), open your browser:
 http://localhost:8501
 ```
 
+> **Cloud LLM mode**: If you've set `USE_CLOUD_LLM=True` in config.py, no model download is needed — the app connects to your chosen cloud provider (OpenAI, Groq, Gemini, Ollama, etc.) instantly. See [Cloud LLM Setup](INSTALLATION.md#cloud-llm-setup).
+
 You'll see the FinanceGPT chat interface with:
 - **Left sidebar**: Agent list, session manager, file upload, theme toggle
 - **Top bar**: Live market ticker (Nifty, Sensex, Gold, USD/INR)
@@ -290,6 +292,7 @@ Upload financial documents for AI analysis:
 
 - **New chat**: Click "New Chat" in sidebar or press `Cmd+Shift+N`
 - **Switch sessions**: Click any previous session in the sidebar
+- **Auto-restore**: Your last active session is automatically restored when you reopen the page
 - **Pin important sessions**: Pin icon keeps them from auto-purging
 - **Delete session**: Click the delete icon on any session
 

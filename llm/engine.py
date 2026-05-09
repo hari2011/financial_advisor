@@ -1,5 +1,12 @@
-"""LLM inference engine using llama-cpp-python with Metal acceleration.
-Includes: KV cache quantization, response caching, prompt prefix optimization."""
+"""LLM inference engine — local (llama-cpp-python) or cloud (OpenAI-compatible API).
+
+Local mode:  Qwen3-8B via llama-cpp-python with Metal/CUDA/CPU.
+Cloud mode:  Any OpenAI-compatible API (OpenAI, Groq, Together, Gemini, Ollama, etc.).
+
+Set USE_CLOUD_LLM=True in config.py and configure CLOUD_LLM to use cloud mode.
+"""
+from __future__ import annotations
+
 import os
 import re
 import time
@@ -7,7 +14,14 @@ import hashlib
 import logging
 import threading
 from collections import OrderedDict
-from llama_cpp import Llama
+
+try:
+    from llama_cpp import Llama
+    _HAS_LLAMA_CPP = True
+except ImportError:
+    _HAS_LLAMA_CPP = False
+    Llama = None  # type: ignore
+
 from config import MODEL_PATH, LLM_CONFIG, MODEL_DIR, MODEL_REPO, MODEL_FILE
 
 logger = logging.getLogger("financegpt.llm")
@@ -139,6 +153,11 @@ class LLMEngine:
     def initialize(self):
         if self._initialized:
             return
+        if not _HAS_LLAMA_CPP:
+            raise ImportError(
+                "llama-cpp-python is not installed. Install it for local LLM mode, "
+                "or set USE_CLOUD_LLM=True in config.py to use a cloud LLM instead."
+            )
         self._ensure_model()
         from platform_setup import GPU, print_system_info
         print_system_info()
@@ -173,11 +192,15 @@ class LLMEngine:
             type_k=kv_quant_type,
             type_v=kv_quant_type,
             flash_attn=use_flash_attn,
+            use_mmap=True,              # memory-map model file (faster load, lower RSS on CPU)
+            use_mlock=not is_cpu_only,   # lock in RAM only with GPU (CPU needs mmap flexibility)
             verbose=False,
         )
         self._initialized = True
         elapsed = time.time() - t0
-        mode = "CPU-only (Q4_K_M)" if is_cpu_only else f"GPU ({GPU.backend.upper()}, Q5_K_M)"
+        from config import MODEL_FILE
+        quant = MODEL_FILE.split("-")[-1].replace(".gguf", "")
+        mode = f"CPU-only ({quant})" if is_cpu_only else f"GPU ({GPU.backend.upper()}, {quant})"
         logger.info(f"LLM loaded in {elapsed:.1f}s — {mode} — ready for inference")
 
     def _build_messages(self, system_prompt: str, user_message: str,
@@ -331,5 +354,206 @@ class LLMEngine:
         return "general_advisor"
 
 
-# Singleton
-llm = LLMEngine()
+# ──────────────────────── Cloud LLM Engine ────────────────────────
+
+class CloudLLMEngine:
+    """LLM engine that calls an OpenAI-compatible cloud API.
+
+    Compatible with: OpenAI, Azure OpenAI, Groq, Together AI, Fireworks,
+    Google Gemini (OpenAI-compat endpoint), Anthropic (via litellm proxy),
+    Ollama, LM Studio, vLLM, and any OpenAI-compatible server.
+    """
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
+    def initialize(self):
+        if self._initialized:
+            return
+
+        from config import CLOUD_LLM, get_proxies
+        import openai
+
+        api_base = CLOUD_LLM["api_base"].rstrip("/")
+        api_key = CLOUD_LLM["api_key"]
+        self._model = CLOUD_LLM["model"]
+        self._temperature = CLOUD_LLM.get("temperature", 0.7)
+        self._max_tokens = CLOUD_LLM.get("max_tokens", 2048)
+        self._timeout = CLOUD_LLM.get("timeout", 60)
+
+        if not api_base or not self._model:
+            raise ValueError(
+                "Cloud LLM misconfigured: set CLOUD_LLM['api_base'] and "
+                "CLOUD_LLM['model'] in config.py"
+            )
+
+        # Build httpx client with proxy support if configured
+        http_client = None
+        proxies = get_proxies()
+        if proxies:
+            try:
+                import httpx
+                proxy_url = proxies.get("https") or proxies.get("http")
+                http_client = httpx.Client(proxy=proxy_url)
+            except ImportError:
+                logger.warning("httpx not installed — proxy will not apply to cloud LLM calls")
+
+        kwargs = {
+            "base_url": api_base,
+            "api_key": api_key or "not-needed",  # some local servers don't need a key
+            "timeout": self._timeout,
+        }
+        if http_client:
+            kwargs["http_client"] = http_client
+
+        self._client = openai.OpenAI(**kwargs)
+        self._async_client = openai.AsyncOpenAI(
+            base_url=api_base,
+            api_key=api_key or "not-needed",
+            timeout=self._timeout,
+        )
+
+        self._initialized = True
+        logger.info(f"Cloud LLM initialized: {api_base} / model={self._model}")
+
+    def _build_messages(self, system_prompt: str, user_message: str,
+                        context: str = "", history: list = None) -> list:
+        """Build messages array. No /no_think suffix for cloud models."""
+        messages = [{"role": "system", "content": system_prompt}]
+        if history:
+            for msg in history:
+                messages.append({"role": msg["role"], "content": msg["content"]})
+        if context:
+            messages.append({"role": "user", "content": f"[CONTEXT DATA]\n{context}"})
+            messages.append({"role": "assistant", "content": "I've reviewed the data. Please go ahead with your question."})
+        messages.append({"role": "user", "content": user_message})
+        return messages
+
+    def generate(self, system_prompt: str, user_message: str,
+                 context: str = "", history: list = None) -> str:
+        self.initialize()
+        messages = self._build_messages(system_prompt, user_message, context, history)
+
+        cached = _response_cache.get(messages)
+        if cached is not None:
+            return cached
+
+        t0 = time.time()
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=messages,
+            temperature=self._temperature,
+            max_tokens=self._max_tokens,
+        )
+        result = response.choices[0].message.content or ""
+        result = _strip_think_tags(result)
+        usage = response.usage
+        logger.info(
+            f"Cloud response in {time.time()-t0:.1f}s | "
+            f"tokens_in={usage.prompt_tokens if usage else '?'} | "
+            f"tokens_out={usage.completion_tokens if usage else '?'}"
+        )
+        _response_cache.put(messages, result)
+        return result
+
+    def generate_stream(self, system_prompt: str, user_message: str,
+                        context: str = "", history: list = None):
+        """Stream tokens from cloud API. Yields (token_text, kind) tuples."""
+        self.initialize()
+        messages = self._build_messages(system_prompt, user_message, context, history)
+
+        t0 = time.time()
+        token_count = 0
+        in_think_block = False
+        think_buffer = ""
+
+        stream = self._client.chat.completions.create(
+            model=self._model,
+            messages=messages,
+            temperature=self._temperature,
+            max_tokens=self._max_tokens,
+            stream=True,
+        )
+
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            content = delta.content if delta and delta.content else ""
+            if content:
+                # Handle <think> blocks (DeepSeek-R1, QwQ, etc.)
+                if "<think>" in content:
+                    in_think_block = True
+                    think_buffer = content
+                    after_open = content.split("<think>", 1)[1]
+                    if after_open:
+                        yield (after_open, "think")
+                    continue
+                if in_think_block:
+                    think_buffer += content
+                    if "</think>" in think_buffer:
+                        if "</think>" in content:
+                            before_close = content.split("</think>", 1)[0]
+                            after_close = content.split("</think>", 1)[1]
+                        else:
+                            before_close = ""
+                            after_close = think_buffer.split("</think>", 1)[1]
+                        if before_close.strip():
+                            yield (before_close, "think")
+                        in_think_block = False
+                        think_buffer = ""
+                        if after_close.strip():
+                            token_count += 1
+                            yield (after_close, "visible")
+                    else:
+                        yield (content, "think")
+                    continue
+                token_count += 1
+                yield (content, "visible")
+
+        logger.info(f"Cloud stream completed in {time.time()-t0:.1f}s | tokens={token_count}")
+
+    def classify(self, query: str, categories: dict) -> str:
+        self.initialize()
+        cats_text = "\n".join(f"- {k}: {v}" for k, v in categories.items())
+        prompt = (
+            f"Classify the following user query into exactly ONE category. "
+            f"Reply with ONLY the category key, nothing else.\n\n"
+            f"Categories:\n{cats_text}\n\nQuery: {query}\n\nCategory key:"
+        )
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": "You are a query classifier. Respond with only the category key."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.0,
+            max_tokens=20,
+        )
+        result = (response.choices[0].message.content or "").strip().lower()
+        for key in categories:
+            if key in result:
+                return key
+        return "general_advisor"
+
+
+# ──────────────────────── Engine Selection ────────────────────────
+
+def _create_engine():
+    """Select the right engine based on config."""
+    try:
+        from config import USE_CLOUD_LLM
+        if USE_CLOUD_LLM:
+            logger.info("Cloud LLM mode enabled")
+            return CloudLLMEngine()
+    except ImportError:
+        pass
+    return LLMEngine()
+
+
+# Singleton — automatically picks local or cloud based on config
+llm = _create_engine()

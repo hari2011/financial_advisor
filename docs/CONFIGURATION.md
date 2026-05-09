@@ -34,14 +34,16 @@ When you launch FinanceGPT, `platform_setup.py` runs automatically and detects:
 
 | Setting | How It's Determined |
 |---------|-------------------|
-| Context window (`n_ctx`) | RAM-based: 4K–32K tokens |
+| Context window (`n_ctx`) | RAM-based: 2K–8K (CPU), 8K–32K (GPU) |
 | GPU layers (`n_gpu_layers`) | -1 (all) for GPU, 0 for CPU |
 | Thread count (`n_threads`) | ~70-80% of CPU cores |
-| Batch size (`n_batch`) | 1024 (GPU), 512 (CPU) |
-| Max output tokens (`max_tokens`) | 2048–4096 (GPU), 1536 (CPU) |
+| Batch size (`n_batch`) | 1024 (GPU), 512 (CPU 16GB+), 256 (CPU <16GB) |
+| Max output tokens (`max_tokens`) | 2048–4096 (GPU), 1536 (CPU 16GB+), 1024 (CPU <16GB) |
 | KV cache type | Q8_0 (GPU), Q4_0 (CPU) |
 | Flash attention | On (GPU), Off (CPU) |
-| Model file | Q5_K_M (GPU), Q4_K_M (CPU) |
+| Model file | Q5_K_M (GPU), Q4_K_M (CPU 16GB+), Q3_K_M (CPU <16GB) |
+| Memory mapping (`use_mmap`) | Always True (faster load, lower RSS) |
+| Memory lock (`use_mlock`) | True (GPU), False (CPU — lets OS page-out) |
 
 **You don't need to change any of this** — it works out of the box.
 
@@ -53,14 +55,16 @@ The pipeline depth is automatically adjusted based on your hardware.
 
 ### What each setting controls
 
-| Setting | What It Does | CPU Value | GPU Value |
-|---------|-------------|-----------|-----------|
-| `ROUTER_MAX_TOKENS` | Max tokens for the LLM router's classification output | 100 | 150 |
-| `RESPONSE_MAX_TOKENS` | Max tokens in the AI's response | 1,536 | 4,096 |
-| `REFLECTION_ENABLED` | Whether complex queries get a quality check after generation | `False` | `True` |
-| `DEEP_RESEARCH_MAX_CHARS` | Max characters from web research injected into prompt | 3,500 | 7,000 |
-| `THINKING_ENABLED` | Whether complex queries show internal reasoning | `False` | `True` |
-| `CONTEXT_BUDGET_RESERVE` | Tokens reserved for system overhead | 200 | 100 |
+| Setting | What It Does | CPU <16GB | CPU 16GB+ | GPU |
+|---------|-------------|-----------|-----------|-----|
+| `ROUTER_MAX_TOKENS` | Max tokens for router classification | 100 | 100 | 150 |
+| `RESPONSE_MAX_TOKENS` | Max tokens in AI response | 1,024 | 1,536 | 4,096 |
+| `REFLECTION_ENABLED` | Quality check after generation | `False` | `False` | `True` |
+| `DEEP_RESEARCH_MAX_CHARS` | Max chars from web research | 2,500 | 3,500 | 7,000 |
+| `THINKING_ENABLED` | Internal reasoning for complex queries | `True` | `True` | `True` |
+| `THINKING_BUDGET_HINT` | Word budget hint for think block | 40 | 80 | 200 |
+| `CONTEXT_BUDGET_RESERVE` | Tokens reserved for overhead | 200 | 200 | 100 |
+| `PER_TOKEN_TIMEOUT` | Per-token wait timeout (seconds) | 300 | 300 | 120 |
 
 ### Why CPU skips reflection and thinking
 
@@ -86,7 +90,7 @@ All LLM inference settings live in `LLM_CONFIG` in config.py.
 
 | Setting | Description | Typical Value |
 |---------|-------------|---------------|
-| `n_ctx` | Context window (tokens) | 8192–32768 |
+| `n_ctx` | Context window (tokens) | 2048–32768 |
 | `n_gpu_layers` | Layers offloaded to GPU | -1 (all) or 0 (CPU) |
 | `n_threads` | CPU threads for inference | ~70-80% of cores |
 | `n_batch` | Batch size for prompt processing | 512 or 1024 |
@@ -133,7 +137,8 @@ LLM_CONFIG["n_threads"] = 4
 | Hardware | Model File | Size | Quantization |
 |----------|-----------|------|-------------|
 | GPU (Metal/CUDA/Vulkan) | `Qwen_Qwen3-8B-Q5_K_M.gguf` | ~5.5 GB | Q5_K_M (very good quality) |
-| CPU only | `Qwen_Qwen3-8B-Q4_K_M.gguf` | ~4.6 GB | Q4_K_M (good quality, faster) |
+| CPU with 16 GB+ RAM | `Qwen_Qwen3-8B-Q4_K_M.gguf` | ~4.6 GB | Q4_K_M (good quality, faster) |
+| CPU with <16 GB RAM | `Qwen_Qwen3-8B-Q3_K_M.gguf` | ~3.9 GB | Q3_K_M (good quality, fastest CPU) |
 
 ### Using a different quantization
 
@@ -141,7 +146,7 @@ LLM_CONFIG["n_threads"] = 4
 # In config.py:
 MODEL_FILE = "Qwen_Qwen3-8B-Q8_0.gguf"   # Highest quality (needs 32GB+ RAM)
 # or
-MODEL_FILE = "Qwen_Qwen3-8B-Q3_K_M.gguf"  # Smallest (not recommended for finance)
+MODEL_FILE = "Qwen_Qwen3-8B-Q3_K_M.gguf"  # Fastest CPU inference (auto-selected for <16GB RAM)
 ```
 
 ### Using a different model entirely
@@ -252,16 +257,55 @@ Remove it from the `AGENTS` dict and `AGENT_ICONS` dict in `config.py`. The rout
 | Variable | Purpose |
 |----------|---------|
 | `HF_TOKEN` | HuggingFace token for model download (if rate-limited) |
+| `FINANCEGPT_CLOUD_API_KEY` | API key for cloud LLM provider (when `USE_CLOUD_LLM=True`) |
 | `FINANCEGPT_STARTUP` | Set to `"1"` to print system detection banner (auto-set by server.py) |
 
-### Memory optimization for low-RAM systems
+### Proxy & Network (Corporate / Air-Gapped)
 
 ```python
 # In config.py:
-LLM_CONFIG["n_ctx"] = 4096            # Minimum context window
-LLM_CONFIG["n_gpu_layers"] = 0        # Force CPU (no GPU memory used)
-RESPONSE_MAX_TOKENS = 1024             # Shorter responses
-DEEP_RESEARCH_MAX_CHARS = 2000         # Less web context
+PROXY_ENABLED = True
+PROXY_URL = "http://proxy.corp.example.com:8080"
+
+# Custom pip index for air-gapped package installs:
+PIP_INDEX_URL = "https://nexus.corp.example.com/repository/pypi/simple"
+PIP_TRUSTED_HOST = "nexus.corp.example.com"
+```
+
+The proxy is applied to all outbound HTTP traffic: yfinance, DuckDuckGo, MFAPI, NSE, Swissquote gold feed, and cloud LLM API calls.
+
+### Cloud LLM Mode
+
+Skip local model loading entirely and use a cloud-hosted LLM via the OpenAI-compatible API:
+
+```python
+# In config.py:
+USE_CLOUD_LLM = True
+CLOUD_LLM = {
+    "api_base": "https://api.openai.com/v1",
+    "api_key": os.environ.get("FINANCEGPT_CLOUD_API_KEY", ""),
+    "model": "gpt-4o-mini",
+    "temperature": 0.7,
+    "max_tokens": 2048,
+    "timeout": 60,
+}
+```
+
+Compatible with: OpenAI, Groq, Together AI, Google Gemini, Ollama, LM Studio, vLLM, Azure OpenAI, and any OpenAI-compatible endpoint. See [Installation Guide → Cloud LLM Setup](INSTALLATION.md#cloud-llm-setup) for provider details.
+
+When `USE_CLOUD_LLM=True`, `llama-cpp-python` is not required.
+
+### Memory optimization for low-RAM systems
+
+Most of these are now **auto-applied** for systems with <16 GB RAM (Q3_K_M model, 2K context, 256 batch size). Manual overrides only needed for further tuning:
+
+```python
+# In config.py:
+LLM_CONFIG["n_ctx"] = 2048             # Minimum context window (auto-set for <16GB)
+LLM_CONFIG["n_gpu_layers"] = 0         # Force CPU (no GPU memory used)
+RESPONSE_MAX_TOKENS = 1024              # Shorter responses (auto-set for <16GB)
+DEEP_RESEARCH_MAX_CHARS = 2000          # Less web context
+PER_TOKEN_TIMEOUT = 600                 # Increase if you see timeout errors on slow CPU
 ```
 
 ### Maximum quality for high-end systems

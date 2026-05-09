@@ -7,6 +7,7 @@ No external API keys or services required — just requests + BeautifulSoup.
 Includes retry logic with exponential backoff, thread-safe rate limiting,
 result caching, and cooldown between requests.
 """
+import os
 import re
 import time
 import random
@@ -35,11 +36,21 @@ _ddgs_client_lock = threading.Lock()
 
 
 def _get_ddgs_client():
-    """Return the shared DDGS client, creating it on first use (thread-safe)."""
+    """Return the shared DDGS client, creating it on first use (thread-safe).
+
+    Uses the same PROXY_URL from config.py for DDGS traffic.
+    """
     global _ddgs_client
     with _ddgs_client_lock:
         if _ddgs_client is None:
-            _ddgs_client = DDGS()
+            proxy = ""
+            try:
+                from config import get_proxies
+                proxies = get_proxies()
+                proxy = proxies.get("https") or proxies.get("http") or ""
+            except ImportError:
+                pass
+            _ddgs_client = DDGS(proxy=proxy) if proxy else DDGS()
         return _ddgs_client
 
 # ── Simple result cache (avoid re-fetching identical queries) ──
@@ -105,6 +116,12 @@ def _ddg_html_fallback(query: str, max_results: int = 5) -> list:
     to rate-limiting than the API endpoints.
     """
     try:
+        proxies = {}
+        try:
+            from config import get_proxies
+            proxies = get_proxies()
+        except ImportError:
+            pass
         resp = requests.post(
             "https://html.duckduckgo.com/html/",
             data={"q": query, "b": ""},
@@ -115,6 +132,7 @@ def _ddg_html_fallback(query: str, max_results: int = 5) -> list:
                 "Referer": "https://html.duckduckgo.com/",
             },
             timeout=10,
+            proxies=proxies,
         )
         resp.raise_for_status()
 

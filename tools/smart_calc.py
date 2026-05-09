@@ -14,6 +14,7 @@ Think like a human financial expert:
 - "I earn 25 LPA, plan my retirement" → runs CTC, retirement corpus,
   SIP projections, insurance needs, emergency fund, AND step-up SIP.
 """
+from __future__ import annotations
 
 import re
 import logging

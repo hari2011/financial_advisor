@@ -23,7 +23,7 @@ import shutil
 
 # ──────────────────────── Constants ────────────────────────
 
-MIN_PYTHON = (3, 10)
+MIN_PYTHON = (3, 8)
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 VENV_DIR = os.path.join(PROJECT_DIR, "venv")
 REQUIREMENTS = os.path.join(PROJECT_DIR, "requirements.txt")

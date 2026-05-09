@@ -7,6 +7,7 @@ tax calculations, EPF/gratuity rules, investment vehicles, and formulas.
 Injected into LLM context so the model can REASON about Indian finance
 rather than just copying pre-computed numbers.
 """
+from __future__ import annotations
 
 import re
 

@@ -11,6 +11,7 @@ Categories pre-fetched:
   4. Tax & regulation changes
   5. Gold, forex, commodity prices
 """
+from __future__ import annotations
 
 import time
 import logging

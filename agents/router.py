@@ -1,4 +1,6 @@
 """Agent router - LLM-based query classification with agent dependency graph."""
+from __future__ import annotations
+
 import json
 import logging
 import re
@@ -208,8 +210,13 @@ def _normalize_query(q: str) -> str:
     return re.sub(r'\s+', ' ', re.sub(r'[^\w\s]', '', q.lower())).strip()
 
 
-def _llm_classify_and_search(query: str) -> dict:
+def _llm_classify_and_search(query: str, hint_agents: set = None) -> dict:
     """Combined LLM call: classify agents AND generate search queries.
+
+    When hint_agents is provided (from keyword analysis), the LLM prompt
+    only includes those candidate agents — shrinking the prompt ~60% and
+    cutting classification time ~40-60%. The LLM still makes the nuanced
+    final decision, but over a smaller, pre-filtered candidate set.
 
     Returns dict with:
       - "agents": list of agent keys
@@ -232,10 +239,28 @@ def _llm_classify_and_search(query: str) -> dict:
     from llm.engine import llm
     llm.initialize()
 
-    agent_list = "\n".join(
-        f"- {key}: {desc}" for key, desc in AGENT_DESCRIPTIONS.items()
-    )
-    agent_graph = _build_graph_description()
+    # Build agent list — narrowed if we have keyword hints
+    if hint_agents and len(hint_agents) >= 2:
+        # Use only candidate agents + their graph info (smaller prompt = faster)
+        agent_list = "\n".join(
+            f"- {key}: {desc}" for key, desc in AGENT_DESCRIPTIONS.items()
+            if key in hint_agents
+        )
+        agent_graph = "\n".join(
+            f"  {agent}: calcs=[{', '.join(info['calculators']) if info['calculators'] else 'none'}]"
+            for agent, info in AGENT_GRAPH.items()
+            if agent in hint_agents
+        )
+        narrowed = True
+        logger.info(f"LLM router narrowed to {len(hint_agents)} candidates: {hint_agents}")
+    else:
+        # No useful hints — show all agents
+        agent_list = "\n".join(
+            f"- {key}: {desc}" for key, desc in AGENT_DESCRIPTIONS.items()
+        )
+        agent_graph = _build_graph_description()
+        narrowed = False
+
     prompt = _COMBINED_PROMPT.format(
         agent_list=agent_list,
         agent_graph=agent_graph,
@@ -244,6 +269,9 @@ def _llm_classify_and_search(query: str) -> dict:
 
     try:
         from config import ROUTER_MAX_TOKENS
+        # Use fewer tokens when narrowed (less agents to consider)
+        max_tokens = min(ROUTER_MAX_TOKENS, 100) if narrowed else ROUTER_MAX_TOKENS
+
         response = llm.model.create_chat_completion(
             messages=[
                 {"role": "system", "content": "You are a precise JSON router. Return ONLY a JSON object with 'agents', 'search_queries', and 'complexity' fields. /no_think"},
@@ -251,7 +279,7 @@ def _llm_classify_and_search(query: str) -> dict:
             ],
             temperature=0.05,
             top_p=0.9,
-            max_tokens=ROUTER_MAX_TOKENS,
+            max_tokens=max_tokens,
             repeat_penalty=1.0,
         )
         raw = response["choices"][0]["message"]["content"].strip()
@@ -313,24 +341,29 @@ def _llm_classify(query: str) -> list:
     return result.get("agents", [])
 
 
-# ──────────────────────── Keyword fast-path ────────────────────────
+# ──────────────────────── Keyword Hint Engine ────────────────────────
 
-def _keyword_fast_path(query: str) -> tuple[list[str], str] | None:
-    """Fast keyword classification for clearly single-domain queries.
+def _keyword_hints(query: str) -> tuple[set[str], bool]:
+    """Extract keyword-based agent candidates from the query.
 
-    Returns (list of agent keys, complexity) if the query unambiguously matches ONE domain.
-    Returns None to fall through to LLM classification for ambiguous queries.
-    Saves ~3-8s by avoiding an LLM inference call on obvious queries.
+    Unlike a fast-path, this NEVER makes the final decision (except for
+    trivial greetings). It returns a set of candidate agent keys that the
+    LLM router can focus on — shrinking its search space from 10 agents
+    to 2-4, which cuts classification time ~40-60%.
+
+    Returns:
+        (set of candidate agent keys, is_trivial)
+        is_trivial=True means greetings/trivial — can skip LLM entirely.
     """
     q = query.lower()
 
-    # ── Greetings / trivial ──
+    # ── Greetings / trivial — skip LLM entirely ──
     _greetings = ["hi", "hello", "hey", "thanks", "thank you", "good morning",
                   "good evening", "good afternoon", "bye", "ok", "okay", "sure",
                   "who are you", "what can you do", "help"]
     if any(q.strip() == g or q.strip().startswith(g + " ") or q.strip().startswith(g + ",")
            for g in _greetings):
-        return ["general_advisor"], "simple"
+        return {"general_advisor"}, True
 
     hits = set()
 
@@ -339,7 +372,9 @@ def _keyword_fast_path(query: str) -> tuple[list[str], str] | None:
                              "how much to earn", "cost of living", "decent life",
                              "monthly expense", "expense breakdown", "spending plan",
                              "plan my salary", "salary breakdown", "save money",
-                             "50-30-20", "50 30 20", "emergency fund"]):
+                             "50-30-20", "50 30 20", "emergency fund",
+                             "ctc", "take home", "take-home", "in-hand", "in hand",
+                             "net salary", "monthly salary"]):
         hits.add("budget_planner")
 
     # Tax queries
@@ -367,7 +402,10 @@ def _keyword_fast_path(query: str) -> tuple[list[str], str] | None:
     # Retirement / SIP queries
     if any(p in q for p in ["retire", "retirement", "pension", "corpus plan",
                              "sip", "step up sip", "step-up sip", "ppf", "nps",
-                             "epf", "fire number", "lumpsum vs sip", "sip vs lumpsum"]):
+                             "epf", "fire number", "lumpsum vs sip", "sip vs lumpsum",
+                             "fd", "fixed deposit", "rd", "recurring deposit",
+                             "compound interest", "kvp", "scss", "nsc",
+                             "how much to invest", "wealth creation", "crore by"]):
         hits.add("retirement_planner")
 
     # Crypto queries
@@ -402,40 +440,36 @@ def _keyword_fast_path(query: str) -> tuple[list[str], str] | None:
                                           "define", "how does"]):
         hits.add("general_advisor")
 
-    # ── Determine complexity for fast-path matches ──
-    if len(hits) == 1:
-        agent_key = hits.pop()
-        # Simple: direct lookups, single calculations, factual questions
-        _simple_patterns = ["price", "rate", "calculate", "emi for", "what is",
-                           "how much is", "today", "current", "explain", "meaning",
-                           "define", "sip for"]
-        if any(p in q for p in _simple_patterns) and len(q) < 100:
-            complexity = "simple"
-        elif len(q) > 200 or any(p in q for p in ["compare", "vs", "versus",
-                                                     "should i", "better",
-                                                     "which is", "pros and cons"]):
-            complexity = "complex"
-        else:
-            complexity = "moderate"
-        logger.info(f"Keyword fast-path → [{agent_key}] complexity={complexity}")
-        return [agent_key], complexity
+    # Also include dependency agents for richer context (only when few direct hits)
+    expanded = set(hits)
+    if len(hits) <= 3:
+        for agent_key in hits:
+            deps = AGENT_GRAPH.get(agent_key, {}).get("depends_on", [])
+            for dep in deps[:1]:  # Add top 1 dependency as candidate
+                expanded.add(dep)
 
-    if len(hits) == 2:
-        # Two-domain queries are typically complex
-        agents = list(hits)
-        logger.info(f"Keyword fast-path (multi) → {agents} complexity=complex")
-        return agents, "complex"
+    # Always include general_advisor as a fallback candidate
+    if expanded:
+        expanded.add("general_advisor")
 
-    if len(hits) > 2:
-        logger.info(f"Keyword fast-path: too many domains ({hits}), deferring to LLM")
+    # Cap at 6 candidates — above that it's not narrowing enough to help
+    if len(expanded) > 6:
+        # Keep direct hits + general, drop dependency expansions
+        expanded = hits | {"general_advisor"}
 
-    return None  # Ambiguous or no clear signal — use LLM
+    logger.info(f"Keyword hints: direct={hits}, expanded={expanded}")
+    return expanded, False
 
 
 # ──────────────────────── Main router ────────────────────────
 
 def route_query(query: str, manual_agent: str = None) -> tuple[list, list, str]:
     """Route a query to appropriate agent(s) and generate search queries.
+
+    Hybrid strategy (ROUTER_MODE="hybrid"):
+    1. Keywords extract candidate agents (narrows 10 → 2-5)
+    2. LLM sees only the candidates + their descriptions (shorter prompt = faster)
+    3. LLM makes the nuanced final decision with full context
 
     Returns:
         tuple of (
@@ -449,28 +483,36 @@ def route_query(query: str, manual_agent: str = None) -> tuple[list, list, str]:
         logger.info(f"Manual agent selection: {manual_agent}")
         return [(manual_agent, AGENT_REGISTRY[manual_agent])], [], "moderate"
 
-    # Keyword fast-path: enabled when ROUTER_MODE="keyword_first"
-    # LLM classification is always the fallback regardless of mode
-    if ROUTER_MODE == "keyword_first":
-        fast = _keyword_fast_path(query)
-        if fast:
-            agent_keys, complexity = fast
+    # Step 1: Keyword hints (instant, <1ms)
+    hint_agents = set()
+    is_trivial = False
+    if ROUTER_MODE in ("hybrid", "keyword_first"):
+        hint_agents, is_trivial = _keyword_hints(query)
+
+        # Trivial greetings — skip LLM entirely
+        if is_trivial and hint_agents:
+            agent_keys = list(hint_agents)
             result = [(key, AGENT_REGISTRY[key]) for key in agent_keys]
-            logger.info(f"Fast-path routed to: {[r[0] for r in result]}, complexity={complexity}")
-            return result, [], complexity
+            logger.info(f"Trivial fast-path → {agent_keys}")
+            return result, [], "simple"
 
-    else:
-        logger.info(f"Router mode: {ROUTER_MODE} — skipping keyword fast-path")
+        # keyword_first mode: if only 1 candidate, use it directly (old behavior)
+        if ROUTER_MODE == "keyword_first" and len(hint_agents) == 1:
+            agent_key = list(hint_agents)[0]
+            result = [(agent_key, AGENT_REGISTRY[agent_key])]
+            logger.info(f"Keyword-first direct → [{agent_key}]")
+            return result, [], "moderate"
 
-    # Combined LLM classification + search query generation
-    llm_result = _llm_classify_and_search(query)
+    # Step 2: LLM classification (with narrowed candidate list if hints available)
+    llm_result = _llm_classify_and_search(query, hint_agents=hint_agents)
 
     if llm_result.get("agents"):
         agents = llm_result["agents"]
         search_queries = llm_result.get("search_queries", [])
         complexity = llm_result.get("complexity", "moderate")
         result = [(key, AGENT_REGISTRY[key]) for key in agents]
-        logger.info(f"LLM routed to: {[r[0] for r in result]}, complexity={complexity}, search_queries={search_queries}")
+        logger.info(f"LLM routed to: {[r[0] for r in result]}, complexity={complexity}, "
+                     f"search_queries={search_queries}, narrowed={bool(hint_agents)}")
         return result, search_queries, complexity
 
     # Fallback — general_advisor

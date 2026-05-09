@@ -830,6 +830,140 @@
             animation: spin 0.8s linear infinite;
         }
 
+        /* ── Market Data Modal ── */
+        .market-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+            z-index: 600;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.15s;
+        }
+        .market-overlay.active { display: flex; }
+        .market-panel {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            width: 800px;
+            max-width: 95vw;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+            animation: slideUp 0.2s ease-out;
+        }
+        .market-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            background: linear-gradient(135deg, rgba(99,102,241,0.08), transparent 60%);
+        }
+        .market-panel-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0;
+        }
+        .market-panel-header .market-updated-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+        .market-panel-body {
+            overflow-y: auto;
+            padding: 16px 20px 20px;
+            scrollbar-width: thin;
+        }
+        .market-section {
+            margin-bottom: 20px;
+        }
+        .market-section:last-child { margin-bottom: 0; }
+        .market-section-title {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--accent);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .market-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 8px;
+        }
+        .market-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .market-card:hover {
+            border-color: var(--accent);
+            background: var(--bg-hover);
+        }
+        .market-card-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .market-card-price {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            font-variant-numeric: tabular-nums;
+        }
+        .market-card-right {
+            text-align: right;
+        }
+        .market-card-change {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 1px 6px;
+            border-radius: 4px;
+            margin-top: 2px;
+            display: inline-block;
+        }
+        .market-card-change.up { color: var(--green); background: rgba(34,197,94,0.1); }
+        .market-card-change.down { color: var(--red); background: rgba(239,68,68,0.1); }
+        .market-card-change.flat { color: var(--text-muted); background: var(--bg-tertiary); }
+        .market-rates-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 8px;
+        }
+        .market-rate-card {
+            padding: 10px 14px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .market-rate-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        .market-rate-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .market-ticker { cursor: pointer; }
+        .market-ticker:hover { background: var(--bg-hover); }
+
         /* ── Chat Messages ── */
         .chat-area {
             flex: 1;
@@ -1169,13 +1303,14 @@
             border-radius: 8px;
             overflow: hidden;
             animation: fadeIn 0.3s;
+            background: linear-gradient(135deg, rgba(99,102,241,0.03), transparent);
         }
         .thinking-header {
             display: flex;
             align-items: center;
             gap: 8px;
             padding: 8px 12px;
-            background: linear-gradient(135deg, rgba(99,102,241,0.06), rgba(99,102,241,0.02));
+            background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(99,102,241,0.02));
             cursor: pointer;
             font-size: 13px;
             color: var(--text-secondary);
@@ -1183,7 +1318,7 @@
             transition: background 0.2s;
         }
         .thinking-header:hover {
-            background: linear-gradient(135deg, rgba(99,102,241,0.10), rgba(99,102,241,0.04));
+            background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(99,102,241,0.05));
         }
         .think-toggle {
             font-size: 10px;
@@ -1193,20 +1328,30 @@
         .thinking-header.collapsed .think-toggle {
             transform: rotate(-90deg);
         }
+        .think-word-count {
+            font-size: 11px;
+            color: var(--text-muted);
+            opacity: 0.7;
+            margin-left: 4px;
+        }
         .thinking-content {
             padding: 10px 14px;
             font-size: 12.5px;
             line-height: 1.65;
             color: var(--text-muted);
-            max-height: 250px;
+            max-height: 300px;
             overflow-y: auto;
             border-top: 1px solid rgba(99,102,241,0.08);
             white-space: pre-wrap;
             word-break: break-word;
             scrollbar-width: thin;
+            transition: max-height 0.3s ease, padding 0.3s ease;
         }
         .thinking-content.collapsed {
-            display: none;
+            max-height: 0;
+            padding: 0 14px;
+            overflow: hidden;
+            border-top: none;
         }
         .thinking-dots-inline {
             display: inline-flex;
@@ -2025,6 +2170,19 @@
         </div>
     </aside>
 
+    <!-- Market Data Modal -->
+    <div class="market-overlay" id="marketOverlay" onclick="if(event.target===this)closeMarketPanel()">
+        <div class="market-panel">
+            <div class="market-panel-header">
+                <h2>📊 Live Market Data <span class="market-updated-label" id="marketPanelTime"></span></h2>
+                <button class="calc-close" onclick="closeMarketPanel()" title="Close (Esc)">✕</button>
+            </div>
+            <div class="market-panel-body" id="marketPanelBody">
+                <div style="text-align:center; padding:40px; color:var(--text-muted);">Loading market data...</div>
+            </div>
+        </div>
+    </div>
+
     <!-- Calculator Panel -->
     <div class="calc-overlay" id="calcOverlay" onclick="if(event.target===this)closeCalculators()">
         <div class="calc-panel">
@@ -2092,13 +2250,13 @@
         </header>
 
         <!-- Market Ticker Bar -->
-        <div class="market-ticker" id="marketTicker">
+        <div class="market-ticker" id="marketTicker" onclick="openMarketPanel()" title="Click to view all market data">
             <div class="ticker-label"><span class="ticker-dot"></span> LIVE</div>
             <div class="ticker-loading" id="tickerLoading"><div class="spinner-tiny"></div> Loading market data...</div>
             <div class="ticker-track" id="tickerTrack" style="display:none">
                 <div class="ticker-scroll" id="tickerScroll"></div>
             </div>
-            <div class="ticker-updated" id="tickerUpdated" onclick="refreshTicker()" title="Click to refresh" style="display:none">
+            <div class="ticker-updated" id="tickerUpdated" onclick="event.stopPropagation(); refreshTicker()" title="Click to refresh" style="display:none">
                 <span id="tickerTime"></span> ↻
             </div>
         </div>
@@ -2432,6 +2590,7 @@
                                                 <span class="think-toggle">▼</span>
                                                 <span class="think-label">Thinking</span>
                                                 <span class="thinking-dots-inline"><span></span><span></span><span></span></span>
+                                                <span class="think-word-count"></span>
                                                 <span class="think-time"></span>
                                             </div>
                                             <div class="thinking-content"></div>`;
@@ -2449,11 +2608,14 @@
                                     const tc = thinkingBlock.querySelector('.thinking-content');
                                     tc.textContent = thinkingContent;
                                     tc.scrollTop = tc.scrollHeight;
-                                    // Update think time live
+                                    // Update think time + word count live
                                     if (thinkStartTime) {
                                         const secs = ((Date.now() - thinkStartTime) / 1000).toFixed(0);
                                         thinkingBlock.querySelector('.think-time').textContent = secs + 's';
                                     }
+                                    const wordCount = thinkingContent.trim().split(/\s+/).filter(w => w.length > 0).length;
+                                    const wcEl = thinkingBlock.querySelector('.think-word-count');
+                                    if (wcEl) wcEl.textContent = wordCount + ' words';
                                     scrollToBottom();
                                     break;
 
@@ -2464,20 +2626,23 @@
                                         streamEl.style.display = 'block';
                                         if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
                                         tokenStartTime = Date.now();
-                                        // Collapse thinking block if it exists
+                                        // Collapse thinking block if it exists (smooth transition)
                                         if (thinkingBlock) {
                                             const header = thinkingBlock.querySelector('.thinking-header');
                                             const thinkContent = thinkingBlock.querySelector('.thinking-content');
                                             const dots = thinkingBlock.querySelector('.thinking-dots-inline');
                                             const timeEl = thinkingBlock.querySelector('.think-time');
                                             const label = thinkingBlock.querySelector('.think-label');
+                                            const wcEl = thinkingBlock.querySelector('.think-word-count');
                                             header.classList.add('collapsed');
                                             thinkContent.classList.add('collapsed');
                                             header.querySelector('.think-toggle').textContent = '▶';
                                             if (dots) dots.remove();
                                             if (thinkStartTime && label) {
                                                 const secs = ((Date.now() - thinkStartTime) / 1000).toFixed(1);
-                                                label.textContent = 'Thought for ' + secs + 's';
+                                                const words = thinkingContent.trim().split(/\s+/).filter(w => w.length > 0).length;
+                                                label.textContent = `Thought for ${secs}s`;
+                                                if (wcEl) wcEl.textContent = `${words} words`;
                                                 if (timeEl) timeEl.textContent = '';
                                             }
                                         }
@@ -2495,7 +2660,7 @@
                                             streamEl.innerHTML = renderMarkdown(rawText) + '<span class="streaming-dot"></span>' + speedHint;
                                             renderThrottle = null;
                                             scrollToBottom();
-                                        }, 60);
+                                        }, 33);
                                     }
                                     break;
 
@@ -3425,10 +3590,14 @@
             sendMessage();
         }
 
-        // Esc key to close calculator panel
+        // Esc key to close overlays
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && document.getElementById('calcOverlay').classList.contains('active')) {
-                closeCalculators();
+            if (e.key === 'Escape') {
+                if (document.getElementById('marketOverlay').classList.contains('active')) {
+                    closeMarketPanel();
+                } else if (document.getElementById('calcOverlay').classList.contains('active')) {
+                    closeCalculators();
+                }
             }
         });
 
@@ -3724,6 +3893,174 @@
             });
         }
 
+        // ── Market Data Panel (popup) ──
+        function openMarketPanel() {
+            const overlay = document.getElementById('marketOverlay');
+            overlay.classList.add('active');
+            renderMarketPanel();
+        }
+
+        function closeMarketPanel() {
+            document.getElementById('marketOverlay').classList.remove('active');
+        }
+
+        function _changeTag(pct) {
+            const cls = pct > 0.01 ? 'up' : pct < -0.01 ? 'down' : 'flat';
+            const sign = pct > 0 ? '+' : '';
+            return `<span class="market-card-change ${cls}">${sign}${pct.toFixed(2)}%</span>`;
+        }
+
+        function renderMarketPanel() {
+            const body = document.getElementById('marketPanelBody');
+            const timeLabel = document.getElementById('marketPanelTime');
+
+            if (!tickerData) {
+                body.innerHTML = '<div style="text-align:center; padding:40px; color:var(--text-muted);">Market data not loaded yet. Fetching...</div>';
+                fetchTicker().then(() => renderMarketPanel());
+                return;
+            }
+
+            const now = new Date();
+            timeLabel.textContent = '— Updated ' + now.toLocaleTimeString('en-IN', {hour: '2-digit', minute: '2-digit'});
+
+            let html = '';
+
+            // ── Indices ──
+            if (tickerData.indices) {
+                html += '<div class="market-section">';
+                html += '<div class="market-section-title">📈 Market Indices</div>';
+                html += '<div class="market-grid">';
+                for (const [, idx] of Object.entries(tickerData.indices)) {
+                    if (idx && idx.price) {
+                        html += `<div class="market-card">
+                            <div class="market-card-name">${idx.name || ''}</div>
+                            <div class="market-card-right">
+                                <div class="market-card-price">${idx.price.toLocaleString('en-IN', {maximumFractionDigits: 0})}</div>
+                                ${_changeTag(idx.change_pct || 0)}
+                            </div>
+                        </div>`;
+                    }
+                }
+                html += '</div></div>';
+            }
+
+            // ── Gold & Precious Metals ──
+            if (tickerData.gold) {
+                const g = tickerData.gold;
+                html += '<div class="market-section">';
+                html += '<div class="market-section-title">🥇 Gold & Precious Metals</div>';
+                html += '<div class="market-grid">';
+                const goldItems = [
+                    { name: 'Gold 24K (per gram)', price: '₹' + (g.price_per_gram_24k || 0).toLocaleString('en-IN'), pct: g.change_pct || 0 },
+                    { name: 'Gold 24K (per 10g)', price: '₹' + (g.price_per_10g_24k || 0).toLocaleString('en-IN'), pct: g.change_pct || 0 },
+                    { name: 'Gold 22K (per gram)', price: '₹' + (g.price_per_gram_22k || 0).toLocaleString('en-IN'), pct: g.change_pct || 0 },
+                    { name: 'Gold 22K (per 10g)', price: '₹' + (g.price_per_10g_22k || 0).toLocaleString('en-IN'), pct: g.change_pct || 0 },
+                    { name: 'Gold 18K (per gram)', price: '₹' + (g.price_per_gram_18k || 0).toLocaleString('en-IN'), pct: g.change_pct || 0 },
+                    { name: 'Gold 18K (per 10g)', price: '₹' + (g.price_per_10g_18k || 0).toLocaleString('en-IN'), pct: g.change_pct || 0 },
+                    { name: 'Gold (International)', price: '$' + (g.price_per_oz_usd || 0).toLocaleString('en-US', {maximumFractionDigits: 2}) + '/oz', pct: g.change_pct || 0 },
+                ];
+                for (const item of goldItems) {
+                    if (item.price === '₹0' || item.price === '$0/oz') continue;
+                    html += `<div class="market-card">
+                        <div class="market-card-name">${item.name}</div>
+                        <div class="market-card-right">
+                            <div class="market-card-price">${item.price}</div>
+                            ${_changeTag(item.pct)}
+                        </div>
+                    </div>`;
+                }
+                html += '</div></div>';
+            }
+
+            // ── Forex ──
+            if (tickerData.forex && Object.keys(tickerData.forex).length) {
+                html += '<div class="market-section">';
+                html += '<div class="market-section-title">💱 Forex Rates</div>';
+                html += '<div class="market-grid">';
+                for (const [, fx] of Object.entries(tickerData.forex)) {
+                    if (fx && fx.price) {
+                        html += `<div class="market-card">
+                            <div class="market-card-name">${fx.name || ''}</div>
+                            <div class="market-card-right">
+                                <div class="market-card-price">₹${fx.price.toFixed(2)}</div>
+                                ${_changeTag(fx.change_pct || 0)}
+                            </div>
+                        </div>`;
+                    }
+                }
+                html += '</div></div>';
+            }
+
+            // ── Commodities ──
+            if (tickerData.commodities && Object.keys(tickerData.commodities).length) {
+                html += '<div class="market-section">';
+                html += '<div class="market-section-title">🛢️ Commodities</div>';
+                html += '<div class="market-grid">';
+                for (const [, c] of Object.entries(tickerData.commodities)) {
+                    if (c && c.price) {
+                        html += `<div class="market-card">
+                            <div class="market-card-name">${c.name || ''}</div>
+                            <div class="market-card-right">
+                                <div class="market-card-price">$${c.price.toLocaleString('en-US', {maximumFractionDigits: 2})}</div>
+                                ${_changeTag(c.change_pct || 0)}
+                            </div>
+                        </div>`;
+                    }
+                }
+                html += '</div></div>';
+            }
+
+            // ── Savings & Deposit Rates ──
+            if (tickerData.rates) {
+                const r = tickerData.rates;
+                html += '<div class="market-section">';
+                html += '<div class="market-section-title">🏦 Savings & Deposit Rates</div>';
+                html += '<div class="market-rates-grid">';
+                // rates keys are objects: {name, rate, unit}
+                const savingsKeys = ['rbi_repo_rate','sbi_fd_1yr','sbi_fd_3yr','sbi_fd_5yr','ppf','sukanya_samriddhi','nsc','epf','scss','post_office'];
+                for (const key of savingsKeys) {
+                    const entry = r[key];
+                    if (entry && entry.rate !== undefined) {
+                        html += `<div class="market-rate-card">
+                            <div class="market-rate-label">${entry.name || key}</div>
+                            <div class="market-rate-value">${entry.rate}%</div>
+                        </div>`;
+                    }
+                }
+                html += '</div></div>';
+
+                // ── Loan Interest Rates ──
+                if (r.loans && typeof r.loans === 'object') {
+                    html += '<div class="market-section">';
+                    html += '<div class="market-section-title">💳 Loan Interest Rates</div>';
+                    html += '<div class="market-rates-grid">';
+                    for (const [, loan] of Object.entries(r.loans)) {
+                        if (loan && loan.rate_min !== undefined) {
+                            html += `<div class="market-rate-card">
+                                <div class="market-rate-label">${loan.name}</div>
+                                <div class="market-rate-value">${loan.rate_min}% – ${loan.rate_max}%</div>
+                                <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">Typical: ${loan.typical}%</div>
+                            </div>`;
+                        }
+                    }
+                    html += '</div></div>';
+                }
+            }
+
+            // Refresh button
+            html += `<div style="text-align:center; padding-top:8px;">
+                <button onclick="refreshMarketPanel()" style="padding:6px 16px; font-size:12px; background:var(--accent); color:#fff; border:none; border-radius:6px; cursor:pointer; font-weight:600;">↻ Refresh Data</button>
+            </div>`;
+
+            body.innerHTML = html;
+        }
+
+        function refreshMarketPanel() {
+            const body = document.getElementById('marketPanelBody');
+            body.innerHTML = '<div style="text-align:center; padding:40px; color:var(--text-muted);"><div class="spinner-tiny" style="display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;"></div> Refreshing...</div>';
+            fetchTicker().then(() => renderMarketPanel());
+        }
+
         function startTicker() {
             fetchTicker();
             // Refresh every 5 minutes
@@ -3742,6 +4079,10 @@
         }).catch(() => {});
         // Restore toggle state
         document.getElementById('saveToggle').checked = saveConversation;
+        // Auto-restore last active session on page load
+        if (sessionId) {
+            restoreSession(sessionId).catch(() => {});
+        }
         userInput.focus();
     </script>
 </body>

@@ -7,6 +7,7 @@ Brings Gemini/Perplexity-style grounded responses to the local LLM:
   4. Rank and select best passages within token budget
   5. Format as numbered sources with URLs for LLM citation
 """
+from __future__ import annotations
 
 import re
 import time

@@ -1,8 +1,8 @@
 # 💹 FinanceGPT — Agentic AI Financial Advisor
 
-A **100% local, privacy-first** agentic AI financial advisor powered by **Qwen3-8B** (via llama-cpp-python) and **LangGraph**, tailored for the **Indian market**. Runs on **macOS, Linux, and Windows** with automatic hardware detection and optimization.
+A **privacy-first** agentic AI financial advisor powered by **Qwen3-8B** (via llama-cpp-python) and **LangGraph**, tailored for the **Indian market**. Runs on **macOS, Linux, and Windows** with automatic hardware detection and optimization.
 
-All processing happens on your machine — your financial data never leaves your computer.
+Runs **100% locally** by default — or optionally connect to **cloud LLMs** (OpenAI, Groq, Gemini, Together, Ollama, etc.) via the OpenAI-compatible API.
 
 ---
 
@@ -22,7 +22,8 @@ All processing happens on your machine — your financial data never leaves your
 ## ✨ Key Highlights
 
 ### AI & LLM
-- **Qwen3-8B** — Q5_K_M on GPU (5.5 GB), Q4_K_M on CPU (4.6 GB), auto-selected by hardware
+- **Qwen3-8B** — 3-tier quantization auto-selected by hardware: Q5_K_M (GPU, 5.5 GB) / Q4_K_M (CPU 16GB+, 4.6 GB) / Q3_K_M (CPU <16GB, 3.9 GB)
+- **Cloud LLM support** — optionally use OpenAI, Groq, Google Gemini, Together AI, Ollama, or any OpenAI-compatible API
 - **10 specialist AI agents** — auto-routed via LLM classifier with agent dependency graph
 - **Agentic LangGraph pipeline** — conditional edges, self-reflection, and adaptive tool selection
 - **Query complexity classification** — LLM classifies queries as simple/moderate/complex to optimize the pipeline path
@@ -71,8 +72,9 @@ All processing happens on your machine — your financial data never leaves your
 - **Auto GPU detection** — Metal → CUDA → Vulkan → CPU fallback
 - **Auto scaling** — context window, GPU layers, threads, batch size, and pipeline depth all tuned to your hardware
 - **CPU-first design** — fully functional on CPU-only machines with optimized pipeline (lean mode)
+- **Proxy support** — configurable HTTP/HTTPS proxy for corporate/air-gapped networks (all outbound traffic)
 - **Session persistence** — conversation history + user profile via SQLite checkpointing
-- **Privacy** — zero API keys, zero telemetry, zero cloud calls
+- **Privacy** — zero API keys, zero telemetry, zero cloud calls (local mode)
 
 ---
 
@@ -85,7 +87,7 @@ All processing happens on your machine — your financial data never leaves your
 | **CPU** | Any 64-bit | Apple Silicon / modern x86 |
 | **GPU** | Not required | Apple Metal / NVIDIA CUDA / AMD Vulkan |
 | **OS** | macOS 12+, Ubuntu 20.04+, Windows 10+ | macOS 14+ (Apple Silicon) |
-| **Python** | 3.10+ | 3.11+ |
+| **Python** | 3.8+ | 3.11+ |
 
 ---
 
@@ -381,25 +383,26 @@ User Query
 
 **CPU-Only Systems:**
 
-| RAM | Context Window | Max Output | Batch Size |
-|-----|---------------|------------|------------|
-| 32 GB+ | 16,384 tokens | 1,536 | 512 |
-| 16-32 GB | 8,192 tokens | 1,536 | 512 |
-| < 16 GB | 4,096 tokens | 1,536 | 512 |
+| RAM | Model | Context Window | Max Output | Batch Size |
+|-----|-------|---------------|------------|------------|
+| 32 GB+ | Q4_K_M (4.6 GB) | 8,192 tokens | 1,536 | 512 |
+| 16-32 GB | Q4_K_M (4.6 GB) | 4,096 tokens | 1,536 | 512 |
+| < 16 GB | Q3_K_M (3.9 GB) | 2,048 tokens | 1,024 | 256 |
 
 ### CPU vs GPU Pipeline
 
-| Setting | CPU (Lean) | GPU (Full) |
-|---------|-----------|------------|
-| **Model quantization** | Q4_K_M (4.6 GB) | Q5_K_M (5.5 GB) |
-| **KV cache** | Q4_0 (~75% savings) | Q8_0 (~50% savings) |
-| **Flash attention** | Off | On |
-| **Response max tokens** | 1,536 | 4,096 |
-| **Router max tokens** | 100 | 150 |
-| **Thinking mode (/think)** | Disabled | Enabled (complex queries) |
-| **Reflection + refinement** | Disabled | Enabled (complex queries) |
-| **Deep research context** | 3,500 chars | 7,000 chars |
-| **Threads** | 80% of cores | 70% of cores |
+| Setting | CPU <16GB (Ultra-Lean) | CPU 16GB+ (Lean) | GPU (Full) |
+|---------|----------------------|-----------------|------------|
+| **Model quantization** | Q3_K_M (3.9 GB) | Q4_K_M (4.6 GB) | Q5_K_M (5.5 GB) |
+| **KV cache** | Q4_0 (~75% savings) | Q4_0 (~75% savings) | Q8_0 (~50% savings) |
+| **Flash attention** | Off | Off | On |
+| **Response max tokens** | 1,024 | 1,536 | 4,096 |
+| **Router max tokens** | 100 | 100 | 150 |
+| **Thinking budget** | 40 words | 80 words | 200 words |
+| **Reflection + refinement** | Disabled | Disabled | Enabled (complex queries) |
+| **Deep research context** | 2,500 chars | 3,500 chars | 7,000 chars |
+| **Batch size** | 256 | 512 | 1,024 |
+| **Threads** | 80% of cores | 80% of cores | 70% of cores |
 
 > No manual configuration needed — the app detects your hardware at startup and selects the optimal profile automatically.
 
@@ -409,8 +412,8 @@ User Query
 |-------|------|---------|-------|-----------|
 | Q8_0 | ~8.5 GB | Near-lossless | Slower | Manual override only (32 GB+ RAM) |
 | **Q5_K_M** | **~5.5 GB** | **Excellent** | **Good** | **Auto-selected when GPU detected** |
-| **Q4_K_M** | **~4.6 GB** | **Good** | **Faster** | **Auto-selected on CPU-only systems** |
-| Q3_K_M | ~3.5 GB | Degraded | Fastest | Not recommended for financial advice |
+| **Q4_K_M** | **~4.6 GB** | **Good** | **Faster** | **Auto-selected on CPU with 16 GB+ RAM** |
+| **Q3_K_M** | **~3.9 GB** | **Good** | **Fastest** | **Auto-selected on CPU with <16 GB RAM** |
 
 ### Performance Benchmarks
 
@@ -552,7 +555,51 @@ ROUTER_MAX_TOKENS = 100            # Max router classification output
 REFLECTION_ENABLED = False         # Disable reflection loop
 THINKING_ENABLED = False           # Disable /think mode
 DEEP_RESEARCH_MAX_CHARS = 3500     # Limit web research context
+
+# Proxy (for corporate/air-gapped networks)
+PROXY_ENABLED = True
+PROXY_URL = "http://proxy.corp.example.com:8080"
+PIP_INDEX_URL = "https://nexus.corp.example.com/repository/pypi/simple"
+PIP_TRUSTED_HOST = "nexus.corp.example.com"
 ```
+
+### Cloud LLM Mode (Optional)
+
+Skip local model download entirely and use a cloud-hosted LLM:
+
+```python
+# config.py
+USE_CLOUD_LLM = True
+CLOUD_LLM = {
+    "api_base": "https://api.openai.com/v1",       # or Groq, Together, Gemini, Ollama, etc.
+    "api_key": os.environ.get("FINANCEGPT_CLOUD_API_KEY", ""),
+    "model": "gpt-4o-mini",                         # any model the provider supports
+    "temperature": 0.7,
+    "max_tokens": 2048,
+    "timeout": 60,
+}
+```
+
+```bash
+# Set API key via environment variable (never hardcode)
+export FINANCEGPT_CLOUD_API_KEY="sk-..."
+python start.py
+```
+
+**Compatible providers:**
+
+| Provider | `api_base` | Example `model` |
+|----------|-----------|------------------|
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini`, `gpt-4o` |
+| Groq | `https://api.groq.com/openai/v1` | `llama-3.1-70b-versatile` |
+| Together AI | `https://api.together.xyz/v1` | `meta-llama/Llama-3.1-8B-Instruct-Turbo` |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-2.0-flash` |
+| Ollama (local) | `http://localhost:11434/v1` | `llama3.1`, `qwen2.5` |
+| LM Studio | `http://localhost:1234/v1` | (auto-detected) |
+| vLLM | `http://localhost:8000/v1` | (your served model) |
+| Azure OpenAI | `https://{name}.openai.azure.com/openai/deployments/{deploy}` | (your deployment) |
+
+> When `USE_CLOUD_LLM=True`, `llama-cpp-python` is not required. The `openai` package handles all communication.
 
 > [Full configuration guide →](docs/CONFIGURATION.md)
 
@@ -610,7 +657,7 @@ financial_advisor/
 │   └── workflow.py             # LangGraph agentic pipeline (conditional edges, reflection, refinement)
 │
 ├── llm/
-│   └── engine.py               # LLM engine — KV Q8 cache, flash attn, response cache
+│   └── engine.py               # LLM engine — local (llama-cpp) or cloud (OpenAI-compatible API)
 │
 ├── agents/
 │   ├── base.py                 # Base agent class with auto market data + web search
@@ -636,7 +683,8 @@ financial_advisor/
 │   ├── deep_research.py        # Multi-source web research with citations
 │   ├── web_search.py           # DuckDuckGo search + world briefing (thread-safe)
 │   ├── file_parser.py          # CSV/PDF/Excel/JSON/TXT file parser
-│   └── model_converter.py      # SafeTensors/PyTorch → GGUF auto-conversion
+│   ├── model_converter.py      # SafeTensors/PyTorch → GGUF auto-conversion
+│   └── convert_hf_to_gguf.py  # Bundled llama.cpp conversion script (fallback)
 │
 ├── knowledge/
 │   └── indian_finance.py       # Indian finance reference data (tax slabs, 80C, etc.)
@@ -679,10 +727,12 @@ python test_cross_ref.py     # 53/53 cross-reference checks passed
 
 ## 🔒 Privacy & Security
 
-- **100% local LLM** — model runs entirely on your machine via llama-cpp-python
-- **No API keys needed** — DuckDuckGo search, yfinance market data are keyless
-- **No telemetry** — zero tracking, zero analytics, zero cloud calls
-- **No data leaves your PC** — works fully offline (except web search and market data)
+- **100% local by default** — model runs entirely on your machine via llama-cpp-python
+- **Cloud LLM is opt-in** — only enabled when you explicitly set `USE_CLOUD_LLM=True`; queries go to your chosen provider
+- **API key via env var** — cloud API keys read from `FINANCEGPT_CLOUD_API_KEY` environment variable, never stored in code
+- **No API keys needed (local mode)** — DuckDuckGo search, yfinance market data are keyless
+- **No telemetry** — zero tracking, zero analytics
+- **No data leaves your PC (local mode)** — works fully offline (except web search and market data)
 - **XSS protection** — all LLM output sanitized via DOMPurify before rendering
 - **Input validation** — all calculator inputs validated with type, min/max, and required checks
 - **No secrets in code** — no hardcoded tokens, keys, or credentials
@@ -693,7 +743,8 @@ python test_cross_ref.py     # 53/53 cross-reference checks passed
 
 | Package | Purpose |
 |---------|---------|
-| `llama-cpp-python` | Local LLM inference with Metal/CUDA/CPU |
+| `llama-cpp-python` | Local LLM inference with Metal/CUDA/CPU (not needed in cloud mode) |
+| `openai` | Cloud LLM client — OpenAI-compatible API (used only when `USE_CLOUD_LLM=True`) |
 | `huggingface-hub` | Model download from Hugging Face |
 | `fastapi` + `uvicorn` | HTTP server + SSE streaming |
 | `langgraph` | Declarative state graph pipeline |
@@ -730,8 +781,10 @@ For air-gapped environments (no internet), see [Air-Gapped Installation →](doc
 | Issue | Solution |
 |-------|----------|
 | **Model download fails** | Set `export HF_TOKEN=your_token` and retry `python setup_model.py` |
-| **Slow responses on CPU** | Expected — CPU lean pipeline (no reflection, no thinking). Check startup banner for GPU detection |
-| **Out of memory** | Reduce context: `LLM_CONFIG["n_ctx"] = 8192` in config.py |
+| **Slow responses on CPU** | Expected — CPU lean pipeline (no reflection, shorter context). Machines with <16 GB RAM auto-select Q3_K_M for faster inference |
+| **CPU token timeout** | Increase `PER_TOKEN_TIMEOUT` in config.py (default: 300s for CPU, 120s for GPU) |
+| **Out of memory** | Reduce context: `LLM_CONFIG["n_ctx"] = 4096` in config.py, or use Q3_K_M via `python setup_model.py --cpu` |
+| **Cloud LLM not working** | Verify `USE_CLOUD_LLM=True`, `CLOUD_LLM["api_base"]` and `CLOUD_LLM["model"]` are set, and `FINANCEGPT_CLOUD_API_KEY` env var is exported |
 | **Port 8501 in use** | `kill $(lsof -ti:8501)` on macOS/Linux |
 | **`ModuleNotFoundError`** | Activate venv: `source venv/bin/activate` then `pip install -r requirements.txt` |
 | **No GPU detected** | The app falls back to CPU. Verify: `nvidia-smi` (CUDA) or `system_profiler SPDisplaysDataType` (macOS) |
@@ -748,4 +801,4 @@ This project is for personal use. The Qwen3 model is released under the [Apache 
 
 ---
 
-*Built with ❤️ for Indian investors. Powered by Qwen3-8B + llama-cpp-python + LangGraph + FastAPI. Agentic architecture with deterministic financial accuracy.*
+*Built with ❤️ for Indian investors. Powered by Qwen3-8B + llama-cpp-python + LangGraph + FastAPI. Local-first agentic architecture with deterministic financial accuracy and optional cloud LLM support.*

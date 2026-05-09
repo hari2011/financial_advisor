@@ -13,6 +13,8 @@ The app will auto-detect the format and convert to GGUF if needed.
 Conversion requires: pip install transformers torch safetensors gguf sentencepiece
 These are installed automatically when conversion is needed.
 """
+from __future__ import annotations
+
 import glob
 import json
 import logging
@@ -112,14 +114,24 @@ def get_model_info(hf_dir: str) -> dict:
 # ──────────────────────── Conversion ────────────────────────
 
 def _ensure_conversion_deps(python_exe: str = None):
-    """Install conversion dependencies if missing."""
+    """Install conversion dependencies if missing.
+
+    Handles protobuf (importable as google.protobuf) and supports
+    custom pip index URLs from config for air-tight environments.
+    """
     python_exe = python_exe or sys.executable
     deps = ["transformers", "torch", "safetensors", "gguf", "sentencepiece", "protobuf"]
-    missing = []
 
+    # Map package name → import name (they can differ)
+    import_names = {
+        "protobuf": "google.protobuf",
+    }
+
+    missing = []
     for dep in deps:
+        import_name = import_names.get(dep, dep)
         try:
-            __import__(dep)
+            __import__(import_name)
         except ImportError:
             missing.append(dep)
 
@@ -130,35 +142,55 @@ def _ensure_conversion_deps(python_exe: str = None):
     print(f"\n  Installing conversion tools: {', '.join(missing)}")
     print(f"  This is needed once to convert your model to GGUF format...")
 
+    # Get custom index URL from config (if available)
+    try:
+        from config import PIP_INDEX_URL, PIP_TRUSTED_HOST
+    except ImportError:
+        PIP_INDEX_URL = ""
+        PIP_TRUSTED_HOST = ""
+
+    extra_pip_args = []
+    if PIP_INDEX_URL:
+        extra_pip_args += ["--index-url", PIP_INDEX_URL]
+    if PIP_TRUSTED_HOST:
+        extra_pip_args += ["--trusted-host", PIP_TRUSTED_HOST]
+
     # For torch, use CPU-only to keep download small
     pip_deps = []
     for dep in missing:
         if dep == "torch":
-            pip_deps.append("torch --index-url https://download.pytorch.org/whl/cpu")
+            pip_deps.append("torch")
         else:
             pip_deps.append(dep)
 
-    cmd = [python_exe, "-m", "pip", "install", "-q"] + pip_deps
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        # Try installing one by one
-        for dep in missing:
-            if dep == "torch":
+    # Build the command — torch needs special index URL
+    torch_index = "https://download.pytorch.org/whl/cpu"
+    non_torch = [d for d in pip_deps if d != "torch"]
+    has_torch = "torch" in pip_deps
+
+    # Install non-torch deps with optional custom index
+    if non_torch:
+        cmd = [python_exe, "-m", "pip", "install", "-q"] + extra_pip_args + non_torch
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            # Try one by one
+            for dep in non_torch:
                 subprocess.run(
-                    [python_exe, "-m", "pip", "install", "-q",
-                     "torch", "--index-url", "https://download.pytorch.org/whl/cpu"],
-                    capture_output=True, text=True,
-                )
-            else:
-                subprocess.run(
-                    [python_exe, "-m", "pip", "install", "-q", dep],
+                    [python_exe, "-m", "pip", "install", "-q"] + extra_pip_args + [dep],
                     capture_output=True, text=True,
                 )
 
+    # Install torch separately (always from pytorch index for CPU-only build)
+    if has_torch:
+        torch_cmd = [python_exe, "-m", "pip", "install", "-q",
+                     "torch", "--index-url", torch_index]
+        subprocess.run(torch_cmd, capture_output=True, text=True)
+
     # Verify
     for dep in missing:
+        import_name = import_names.get(dep, dep)
         try:
-            __import__(dep)
+            __import__(import_name)
         except ImportError:
             logger.error(f"Failed to install {dep}")
             return False
@@ -245,8 +277,14 @@ def convert_to_gguf(hf_dir: str, output_dir: str,
 
 
 def _convert_with_llama_cpp(hf_dir: str, output_file: str) -> bool:
-    """Try converting using llama.cpp's convert script (if installed)."""
-    # Look for convert_hf_to_gguf.py in common locations
+    """Try converting using llama.cpp's convert script.
+
+    Search order:
+    1. PATH (convert_hf_to_gguf.py)
+    2. llama-cpp-python package directory
+    3. pip-installed entry points
+    4. Bundled copy shipped with this repo (tools/convert_hf_to_gguf.py)
+    """
     convert_script = shutil.which("convert_hf_to_gguf.py")
 
     # Also check if llama-cpp-python ships with it
@@ -267,6 +305,12 @@ def _convert_with_llama_cpp(hf_dir: str, output_file: str) -> bool:
             if path:
                 convert_script = path
                 break
+
+    # Use the bundled copy shipped with the repo
+    if not convert_script:
+        bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "convert_hf_to_gguf.py")
+        if os.path.exists(bundled):
+            convert_script = bundled
 
     if convert_script:
         logger.info(f"Using convert script: {convert_script}")

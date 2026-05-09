@@ -3,6 +3,8 @@ FinanceGPT — FastAPI Backend
 Server-Sent Events with token streaming.
 LangGraph handles orchestration, history, and checkpointing.
 """
+from __future__ import annotations
+
 import sys
 import os
 import time
@@ -220,7 +222,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/", response_class=HTMLResponse)
 async def index():
     html_path = os.path.join(STATIC_DIR, "index.html")
-    with open(html_path, "r") as f:
+    with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 
 

@@ -108,7 +108,8 @@ That's dangerous when people make real investment decisions based on the output.
   ┌─────▼──────────────────────────────────────────────────────────┐
   │                   LLM Engine (engine.py)                        │
   │                                                                 │
-  │  Qwen3-8B via llama-cpp-python                                 │
+  │  Local: Qwen3-8B via llama-cpp-python                          │
+  │  Cloud: Any OpenAI-compatible API (optional)                   │
   │  • Metal (Apple Silicon) / CUDA (NVIDIA) / Vulkan (AMD) / CPU  │
   │  • KV cache quantization (Q8_0 GPU, Q4_0 CPU)                 │
   │  • Flash attention (GPU only)                                   │
@@ -356,12 +357,14 @@ The inference layer wrapping llama-cpp-python.
 
 | Feature | Detail |
 |---------|--------|
-| Singleton | One `Llama` instance shared across all requests |
+| Dual engine | `LLMEngine` (local llama-cpp-python) or `CloudLLMEngine` (OpenAI-compatible API) — auto-selected via `USE_CLOUD_LLM` config |
+| Singleton | One engine instance shared across all requests |
 | KV cache | Q8_0 quantization (GPU) or Q4_0 (CPU) — saves 50-75% memory |
 | Flash attention | Enabled on supported backends (Metal, CUDA) |
 | Response cache | LRU (64 entries, 10-min TTL) — instant for repeated queries |
 | Streaming | Token-by-token generation yielded to FastAPI SSE |
 | Model discovery | Auto-finds GGUF in `models/`, auto-converts SafeTensors/PyTorch |
+| Cloud providers | OpenAI, Groq, Together AI, Google Gemini, Ollama, LM Studio, vLLM, Azure OpenAI |
 
 **Response cache flow:**
 
@@ -508,6 +511,8 @@ Two SQLite databases:
 
 **Auto-purge**: Keeps the 5 most recent unpinned sessions. Pinned sessions never expire.
 
+**Auto-restore**: On page load, the last active session is automatically restored from `localStorage`. The frontend calls `restoreSession(sessionId)` at boot to repopulate the chat from the LangGraph checkpoint.
+
 **Profile extraction**: The LLM extracts user facts (age, income, risk appetite, goals) from conversations and stores them in session state. These persist across turns, enabling personalized advice.
 
 ---
@@ -563,18 +568,19 @@ Query              →  Route (LLM)                    →  Route (LLM)
 
 **Detailed comparison:**
 
-| Setting | CPU (Lean) | GPU (Full) |
-|---------|-----------|------------|
-| Model file | Q4_K_M (4.6 GB) | Q5_K_M (5.5 GB) |
-| KV cache quantization | Q4_0 (~75% savings) | Q8_0 (~50% savings) |
-| Flash attention | Disabled | Enabled |
-| Max response tokens | 1,536 | 4,096 |
-| Router max tokens | 100 | 150 |
-| Deep research context | 3,500 chars | 7,000 chars |
-| Thinking mode (`/think`) | Disabled | Enabled (complex queries) |
-| Reflection + refinement | Disabled | Enabled (complex queries) |
-| Context budget reserve | 200 tokens | 100 tokens |
-| Typical response time | 15-40s | 5-15s |
+| Setting | CPU <16GB (Ultra-Lean) | CPU 16GB+ (Lean) | GPU (Full) |
+|---------|----------------------|-----------------|------------|
+| Model file | Q3_K_M (3.9 GB) | Q4_K_M (4.6 GB) | Q5_K_M (5.5 GB) |
+| KV cache quantization | Q4_0 (~75% savings) | Q4_0 (~75% savings) | Q8_0 (~50% savings) |
+| Flash attention | Disabled | Disabled | Enabled |
+| Max response tokens | 1,024 | 1,536 | 4,096 |
+| Router max tokens | 100 | 100 | 150 |
+| Deep research context | 2,500 chars | 3,500 chars | 7,000 chars |
+| Thinking budget | 40 words | 80 words | 200 words |
+| Reflection + refinement | Disabled | Disabled | Enabled (complex queries) |
+| Batch size | 256 | 512 | 1,024 |
+| Context budget reserve | 200 tokens | 200 tokens | 100 tokens |
+| Typical response time | 20-60s | 15-40s | 5-15s |
 
 > **Important**: CPU mode is not degraded — it's **optimized**. The same core functionality (agents, calculators, market data, search) is available. The pipeline is trimmed to avoid the most time-consuming steps (reflection, thinking) that would make CPU wait times unbearable.
 
@@ -606,11 +612,13 @@ Runs automatically at import time. No manual configuration needed.
    └─ Total system memory in MB
 
 5. Auto-Scaling
-   ├─ Context window: 4K - 32K tokens (based on RAM + GPU)
+   ├─ Context window: 2K - 32K tokens (based on RAM + GPU)
+   ├─ Model quant: Q5_K_M (GPU), Q4_K_M (CPU 16GB+), Q3_K_M (CPU <16GB)
    ├─ GPU layers: -1 (all on GPU) or partial offload
    ├─ Threads: ~70-80% of CPU cores
-   ├─ Batch size: 512 (CPU) or 1024 (GPU)
-   └─ Max output tokens: 1536 (CPU) or 2048-4096 (GPU)
+   ├─ Batch size: 256 (CPU <16GB), 512 (CPU 16GB+), 1024 (GPU)
+   ├─ Memory: use_mmap=True, use_mlock=True (GPU) / False (CPU)
+   └─ Max output tokens: 1024 (CPU <16GB), 1536 (CPU 16GB+), 2048-4096 (GPU)
 ```
 
 **Startup banner** (printed when server starts):
@@ -730,7 +738,8 @@ financial_advisor/
 │   ├── deep_research.py     ← Multi-source web research with citations
 │   ├── web_search.py        ← DuckDuckGo search (thread-safe, cached)
 │   ├── file_parser.py       ← CSV/PDF/Excel/JSON/TXT parser
-│   └── model_converter.py   ← SafeTensors/PyTorch → GGUF converter
+│   ├── model_converter.py   ← SafeTensors/PyTorch → GGUF converter
+│   └── convert_hf_to_gguf.py ← Bundled llama.cpp conversion script (fallback)
 │
 ├── knowledge/
 │   └── indian_finance.py    ← Indian finance reference data (tax slabs, EPF, 80C)

@@ -1,4 +1,6 @@
 """Market data tools using yfinance with parallel fetching."""
+from __future__ import annotations
+
 import logging
 import yfinance as yf
 import pandas as pd

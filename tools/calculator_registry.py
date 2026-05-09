@@ -3,6 +3,7 @@ Calculator Registry — defines standalone financial calculators with
 field definitions, validation, and result formatting.
 Each calculator maps directly to a function in financial_calc.py.
 """
+from __future__ import annotations
 
 from tools.financial_calc import (
     sip_calculator, emi_calculator, compound_interest, retirement_corpus,

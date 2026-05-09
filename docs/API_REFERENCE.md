@@ -545,6 +545,7 @@ curl http://localhost:8501/api/health
 {
   "status": "ok",
   "llm_loaded": true,
+  "llm_mode": "local",
   "model": "Qwen_Qwen3-8B-Q5_K_M.gguf",
   "gpu_backend": "metal",
   "agents": 10,
@@ -567,6 +568,10 @@ curl http://localhost:8501/api/health
   }
 }
 ```
+
+> **Cloud LLM mode**: When `USE_CLOUD_LLM=True`, the response shows `"llm_mode": "cloud"`, `"model": "gpt-4o-mini"` (or your configured model), and `"gpu_backend": "cloud"`. The `model` field reflects the cloud model name instead of a GGUF filename. The `context_window` and pipeline fields reflect auto-detected local hardware even in cloud mode (used for context gathering, not LLM inference).
+
+> **CPU model variants**: The `model` field may show `Q4_K_M` (CPU 16GB+) or `Q3_K_M` (CPU <16GB) instead of `Q5_K_M` depending on auto-detected hardware.
 
 ---
 

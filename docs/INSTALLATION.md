@@ -28,10 +28,10 @@ Complete step-by-step installation for every platform. Choose **Option A** (auto
 
 | Requirement   | Details                                              |
 |---------------|------------------------------------------------------|
-| **Python**    | 3.10 or higher (check: `python3 --version`)          |
-| **Disk Space**| ~8 GB free (code + model)                             |
+| **Python**    | 3.8 or higher (check: `python3 --version`)           |
+| **Disk Space**| ~8 GB free (code + model); ~1 GB in cloud LLM mode   |
 | **RAM**       | 8 GB minimum, 16 GB+ recommended                     |
-| **Internet**  | Needed for first-time model download (~5 GB)          |
+| **Internet**  | Needed for first-time model download (~5 GB); not needed in cloud mode |
 | **GPU**       | Optional — app works on CPU. GPU gives 3-5x speed    |
 
 ### Supported GPUs
@@ -84,14 +84,16 @@ That's it. The script will:
 
 | Step | What Happens | Time |
 |------|-------------|------|
-| 1. Python check | Verifies Python 3.10+ | Instant |
+| 1. Python check | Verifies Python 3.8+ | Instant |
 | 2. Virtual environment | Creates `venv/` folder with isolated Python | ~5s |
-| 3. Dependencies | Installs all pip packages | ~1-2 min |
+| 3. Dependencies | Installs all pip packages (incl. `openai` for cloud mode) | ~1-2 min |
 | 4. llama-cpp-python | Detects GPU → installs with correct build flags | ~1-5 min |
 | 5. Model download | Downloads Qwen3-8B GGUF (~5 GB) | ~5-15 min |
 | 6. Server launch | Starts FastAPI on port 8501 | ~10s |
 
 **Second run onwards**: Steps 1-5 are skipped (everything cached). Server starts in ~10 seconds.
+
+> **Cloud LLM users**: Steps 4-5 (llama-cpp-python + model download) can be skipped entirely. See [Cloud LLM Setup](#cloud-llm-setup) below.
 
 ### If model download is rate-limited
 
@@ -431,7 +433,9 @@ models/
 └── ...
 ```
 
-The converter auto-selects quantization: Q5_K_M for GPU systems, Q4_K_M for CPU-only.
+The converter auto-selects quantization: Q5_K_M for GPU, Q4_K_M for CPU (16 GB+), Q3_K_M for CPU (<16 GB).
+
+> **Note:** The conversion script (`convert_hf_to_gguf.py`) is bundled with the project — no internet needed for conversion.
 
 ---
 
@@ -443,8 +447,8 @@ The app auto-selects the best model for your hardware, but you can override:
 |-------------|-----------|-----------|---------|----------|
 | Q8_0        | ~8.5 GB   | Excellent | Slower  | 32 GB+ RAM, maximum accuracy |
 | **Q5_K_M**  | **~5.5 GB** | **Very Good** | **Good** | **GPU systems (auto-selected)** |
-| **Q4_K_M**  | **~4.6 GB** | **Good** | **Faster** | **CPU systems (auto-selected)** |
-| Q3_K_M      | ~3.5 GB   | Reduced   | Fastest | Not recommended for finance |
+| **Q4_K_M**  | **~4.6 GB** | **Good** | **Faster** | **CPU systems with 16 GB+ RAM (auto-selected)** |
+| **Q3_K_M**  | **~3.9 GB** | **Good** | **Fastest** | **CPU systems with <16 GB RAM (auto-selected)** |
 
 ### Using a different model
 
@@ -456,6 +460,78 @@ MODEL_FILE = "Qwen_Qwen3-8B-Q8_0.gguf"         # Override quantization
 ```
 
 Or place any compatible GGUF file in the `models/` directory.
+
+---
+
+## Cloud LLM Setup
+
+Skip the local model download entirely and use a cloud-hosted LLM. No GPU or large disk space needed.
+
+### Step 1: Configure
+
+Edit `config.py`:
+
+```python
+USE_CLOUD_LLM = True
+CLOUD_LLM = {
+    "api_base": "https://api.openai.com/v1",       # Your provider's endpoint
+    "api_key": os.environ.get("FINANCEGPT_CLOUD_API_KEY", ""),
+    "model": "gpt-4o-mini",                         # Any model your provider supports
+    "temperature": 0.7,
+    "max_tokens": 2048,
+    "timeout": 60,
+}
+```
+
+### Step 2: Set API key
+
+```bash
+# macOS / Linux
+export FINANCEGPT_CLOUD_API_KEY="sk-..."
+
+# Windows PowerShell
+$env:FINANCEGPT_CLOUD_API_KEY="sk-..."
+```
+
+### Step 3: Launch
+
+```bash
+python3 start.py
+# Or: python server.py (if venv already set up)
+```
+
+In cloud mode, `llama-cpp-python` is **not required** — the `openai` package handles all LLM communication.
+
+### Compatible providers
+
+| Provider | `api_base` | Example `model` |
+|----------|-----------|------------------|
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini`, `gpt-4o` |
+| Groq | `https://api.groq.com/openai/v1` | `llama-3.1-70b-versatile` |
+| Together AI | `https://api.together.xyz/v1` | `meta-llama/Llama-3.1-8B-Instruct-Turbo` |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-2.0-flash` |
+| Ollama (local) | `http://localhost:11434/v1` | `llama3.1`, `qwen2.5` |
+| LM Studio | `http://localhost:1234/v1` | (auto-detected) |
+| vLLM | `http://localhost:8000/v1` | (your served model) |
+| Azure OpenAI | `https://{name}.openai.azure.com/openai/deployments/{deploy}` | (your deployment) |
+
+---
+
+## Behind a Proxy
+
+For corporate networks that require an HTTP proxy for internet access:
+
+```python
+# config.py
+PROXY_ENABLED = True
+PROXY_URL = "http://proxy.corp.example.com:8080"
+
+# For pip installs via private index:
+PIP_INDEX_URL = "https://nexus.corp.example.com/repository/pypi/simple"
+PIP_TRUSTED_HOST = "nexus.corp.example.com"
+```
+
+The proxy is applied to all outbound HTTP traffic: market data (yfinance, Swissquote, MFAPI, NSE), web search (DuckDuckGo), cloud LLM calls, and model downloads.
 
 ---
 

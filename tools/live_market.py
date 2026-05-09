@@ -11,16 +11,53 @@ All data is cached with appropriate TTLs to avoid rate-limiting:
   • Mutual fund NAVs:    30 min cache (NAVs update once daily)
   • FD/RBI rates:        6 hour cache (changes rarely)
 """
+from __future__ import annotations
 
 import time
 import logging
 import threading
+import os
 from typing import Any
 
 import requests
 import yfinance as yf
 
 logger = logging.getLogger("financegpt.tools.market")
+
+# ──────────────────────── Proxy & Session Setup ────────────────────────
+
+def _get_proxies() -> dict:
+    """Get proxy config from config.py (safe import with fallback)."""
+    try:
+        from config import get_proxies
+        return get_proxies()
+    except ImportError:
+        return {}
+
+
+def _make_yf_session():
+    """Create a requests session for yfinance that works with or without curl_cffi.
+
+    yfinance >=0.2.31 tries to use curl_cffi for TLS impersonation, which may
+    not be installed on all platforms. This creates a compatible session with
+    proxy support and proper headers.
+    """
+    proxies = _get_proxies()
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    })
+    if proxies:
+        session.proxies.update(proxies)
+    return session
+
+
+# Shared session for all yfinance calls (avoids curl_cffi import issues)
+_yf_session = _make_yf_session()
 
 # ──────────────────────── Cache ────────────────────────
 
@@ -118,13 +155,27 @@ _FD_RATES = {
     "senior_citizen_savings": 8.20,
 }
 
+# Current Indian loan interest rates (manually maintained)
+# These are approximate ranges — actual rates vary by bank, credit score, and tenure.
+_LOAN_RATES = {
+    "home_loan": {"name": "Home Loan", "rate_min": 8.25, "rate_max": 9.50, "typical": 8.50},
+    "personal_loan": {"name": "Personal Loan", "rate_min": 10.50, "rate_max": 21.00, "typical": 12.00},
+    "car_loan": {"name": "Car Loan (New)", "rate_min": 8.50, "rate_max": 12.50, "typical": 9.00},
+    "used_car_loan": {"name": "Used Car Loan", "rate_min": 11.00, "rate_max": 16.00, "typical": 12.50},
+    "education_loan": {"name": "Education Loan", "rate_min": 8.15, "rate_max": 13.50, "typical": 9.50},
+    "gold_loan": {"name": "Gold Loan", "rate_min": 7.25, "rate_max": 12.00, "typical": 9.00},
+    "lap_loan": {"name": "Loan Against Property", "rate_min": 8.50, "rate_max": 12.00, "typical": 9.50},
+    "two_wheeler_loan": {"name": "Two-Wheeler Loan", "rate_min": 9.00, "rate_max": 18.00, "typical": 12.00},
+    "business_loan": {"name": "Business Loan", "rate_min": 11.00, "rate_max": 22.00, "typical": 14.00},
+}
+
 
 # ──────────────────────── yfinance Helpers ────────────────────────
 
 def _yf_quote(symbol: str) -> dict | None:
     """Fetch a single quote from yfinance. Returns dict with price data or None."""
     try:
-        tk = yf.Ticker(symbol)
+        tk = yf.Ticker(symbol, session=_yf_session)
         fi = tk.fast_info
         price = fi.last_price
         if price is None:
@@ -234,36 +285,84 @@ def get_forex() -> dict:
     return result
 
 
-def get_gold_price_inr() -> dict | None:
-    """Get gold price in INR per gram (converted from USD/oz via live forex).
+def _fetch_gold_spot_usd() -> float | None:
+    """Fetch real-time gold spot price (XAU/USD) from Swissquote public feed.
 
-    1 troy oz = 31.1035 grams.
+    Returns gold spot price in USD/oz, or None on failure.
+    """
+    try:
+        r = requests.get(
+            "https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD",
+            timeout=5,
+            proxies=_get_proxies(),
+        )
+        r.raise_for_status()
+        data = r.json()
+        profiles = data[0]["spreadProfilePrices"]
+        best = profiles[0]
+        return (best["bid"] + best["ask"]) / 2
+    except Exception:
+        logger.debug("Swissquote XAU/USD unavailable, falling back to yfinance")
+        return None
+
+
+def get_gold_price_inr() -> dict | None:
+    """Get gold price in INR per gram — matching Indian domestic market rates.
+
+    Data flow (same as Groww / IBJA methodology):
+      1. Gold spot USD/oz  → Swissquote real-time feed (primary)
+         fallback          → GC=F COMEX futures via yfinance
+      2. USD/INR           → yfinance (INR=X)
+      3. Indian duties     → 6 % customs (Budget 2024) + 3 % GST = ×1.0918
+
     Cached for 5 minutes.
     """
     cached = _get_cached("gold_inr_gram", 300)
     if cached:
         return cached
 
-    commodities = get_commodities()
-    forex = get_forex()
+    # --- gold price in USD per troy ounce ---
+    gold_usd_oz = _fetch_gold_spot_usd()       # real-time spot
+    source = "XAU/USD spot"
+    if gold_usd_oz is None:
+        commodities = get_commodities()
+        gc = commodities.get("gold_usd")
+        if gc:
+            gold_usd_oz = gc["price"]
+            source = "GC=F"
 
-    gold = commodities.get("gold_usd")
-    usd_inr = forex.get("usd_inr")
-
-    if not gold or not usd_inr:
+    if not gold_usd_oz:
         return None
 
-    gold_usd_per_gram = gold["price"] / 31.1035
-    inr_rate = usd_inr["price"]
-    # 24K = 99.9% pure (commodity exchange price)
-    gold_24k_per_gram = round(gold_usd_per_gram * inr_rate, 2)
+    # --- USD → INR ---
+    forex = get_forex()
+    usd_inr = forex.get("usd_inr")
+    inr_rate = usd_inr["price"] if usd_inr else None
+    if not inr_rate:
+        return None
+
+    # --- convert to INR per gram with Indian duties ---
+    # Customs duty: 6 % (Union Budget 2024), GST: 3 %
+    DOMESTIC_FACTOR = (1 + 0.06) * (1 + 0.03)   # 1.0918
+    gold_usd_per_gram = gold_usd_oz / 31.1035
+    gold_24k_per_gram = round(gold_usd_per_gram * inr_rate * DOMESTIC_FACTOR, 2)
+
     gold_24k_per_10g = round(gold_24k_per_gram * 10, 2)
-    # 22K = 91.67% pure (standard jewelry gold in India)
+    # 22K = 22/24 purity ratio (standard IBJA / Groww methodology)
     gold_22k_per_gram = round(gold_24k_per_gram * 22 / 24, 2)
     gold_22k_per_10g = round(gold_22k_per_gram * 10, 2)
-    # 18K = 75% pure (premium jewelry)
+    # 18K = 18/24 purity ratio
     gold_18k_per_gram = round(gold_24k_per_gram * 18 / 24, 2)
     gold_18k_per_10g = round(gold_18k_per_gram * 10, 2)
+
+    # change % from yfinance commodity data (if available)
+    change_pct = 0.0
+    try:
+        commodities = get_commodities()
+        if commodities.get("gold_usd"):
+            change_pct = commodities["gold_usd"].get("change_pct", 0.0)
+    except Exception:
+        pass
 
     result = {
         "price_per_gram": gold_24k_per_gram,
@@ -274,9 +373,10 @@ def get_gold_price_inr() -> dict | None:
         "price_per_10g_22k": gold_22k_per_10g,
         "price_per_gram_18k": gold_18k_per_gram,
         "price_per_10g_18k": gold_18k_per_10g,
-        "price_per_oz_usd": gold["price"],
+        "price_per_oz_usd": gold_usd_oz,
         "usd_inr_rate": inr_rate,
-        "change_pct": gold["change_pct"],
+        "change_pct": change_pct,
+        "source": source,
     }
 
     _set_cached("gold_inr_gram", result)
@@ -339,6 +439,7 @@ def get_mutual_fund_nav(scheme_code: str) -> dict | None:
             f"https://api.mfapi.in/mf/{scheme_code}/latest",
             timeout=8,
             headers={"User-Agent": "FinanceGPT/1.0"},
+            proxies=_get_proxies(),
         )
         if r.status_code != 200:
             return None
@@ -382,6 +483,7 @@ def search_mutual_fund(query: str) -> list[dict]:
             f"https://api.mfapi.in/mf/search?q={requests.utils.quote(query)}",
             timeout=8,
             headers={"User-Agent": "FinanceGPT/1.0"},
+            proxies=_get_proxies(),
         )
         if r.status_code != 200:
             return []
@@ -405,12 +507,13 @@ def search_mutual_fund(query: str) -> list[dict]:
 
 
 def get_fd_rates() -> dict:
-    """Get current FD and savings scheme interest rates.
+    """Get current FD, savings scheme, and loan interest rates.
 
     Returns manually maintained rates (updated periodically).
     These change infrequently (RBI policy changes every 2-3 months).
+    Each entry is {name, rate, unit} for savings, or {name, rate_min, rate_max, typical, unit} for loans.
     """
-    return {
+    rates = {
         "rbi_repo_rate": {"name": "RBI Repo Rate", "rate": _FD_RATES["rbi_repo_rate"], "unit": "%"},
         "sbi_fd_1yr": {"name": "SBI FD (1 year)", "rate": _FD_RATES["sbi_fd_1yr"], "unit": "%"},
         "sbi_fd_3yr": {"name": "SBI FD (3 years)", "rate": _FD_RATES["sbi_fd_3yr"], "unit": "%"},
@@ -422,6 +525,18 @@ def get_fd_rates() -> dict:
         "scss": {"name": "Senior Citizen Savings Scheme", "rate": _FD_RATES["senior_citizen_savings"], "unit": "%"},
         "post_office": {"name": "Post Office Savings Account", "rate": _FD_RATES["post_office_savings"], "unit": "%"},
     }
+    # Add loan rates
+    loan_rates = {}
+    for key, info in _LOAN_RATES.items():
+        loan_rates[key] = {
+            "name": info["name"],
+            "rate_min": info["rate_min"],
+            "rate_max": info["rate_max"],
+            "typical": info["typical"],
+            "unit": "%",
+        }
+    rates["loans"] = loan_rates
+    return rates
 
 
 def get_nse_indices() -> list[dict]:
@@ -440,6 +555,9 @@ def get_nse_indices() -> list[dict]:
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
             "Accept": "application/json",
         })
+        proxies = _get_proxies()
+        if proxies:
+            session.proxies.update(proxies)
         # Get cookies from homepage first (required by NSE)
         session.get("https://www.nseindia.com", timeout=10)
 
@@ -559,5 +677,11 @@ def format_market_snapshot(snapshot: dict) -> str:
         for rk in key_rates:
             if rk in rates:
                 lines.append(f"    • {rates[rk]['name']}: {rates[rk]['rate']}%")
+        # Loan rates
+        loans = rates.get("loans", {})
+        if loans:
+            lines.append("  [Loan Rates]")
+            for key, info in loans.items():
+                lines.append(f"    • {info['name']}: {info['rate_min']}%-{info['rate_max']}% (typical {info['typical']}%)")
 
     return "\n".join(lines)

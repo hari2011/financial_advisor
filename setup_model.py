@@ -2,8 +2,9 @@
 FinanceGPT — Model & Dependency Setup
 Downloads the platform-appropriate LLM model and provides install guidance.
 
-GPU platforms (Metal/CUDA/Vulkan) → Q5_K_M (~5.5 GB) — best quality
-CPU-only platforms               → Q4_K_M (~4.6 GB) — faster inference
+GPU platforms (Metal/CUDA/Vulkan)  → Q5_K_M (~5.5 GB)  — best quality
+CPU-only platforms (16 GB+ RAM)   → Q4_K_M (~4.6 GB)  — good quality
+CPU-only platforms (<16 GB RAM)   → Q3_K_M (~3.9 GB)  — fastest CPU
 """
 import os
 import sys
@@ -103,9 +104,21 @@ def download_model(gpu_backend="cpu"):
     is_cpu_only = gpu_backend == "cpu"
 
     if is_cpu_only:
-        model_file = "Qwen_Qwen3-8B-Q4_K_M.gguf"
-        quant_label = "Q4_K_M (CPU-optimized)"
-        size_label = "~4.6 GB"
+        # Pick quantization based on available RAM
+        try:
+            import platform_setup
+            ram_mb = platform_setup.get_total_ram_mb()
+        except Exception:
+            ram_mb = 16384  # assume 16 GB if detection fails
+
+        if ram_mb < 16384:
+            model_file = "Qwen_Qwen3-8B-Q3_K_M.gguf"
+            quant_label = "Q3_K_M (CPU-fast, <16GB RAM)"
+            size_label = "~3.9 GB"
+        else:
+            model_file = "Qwen_Qwen3-8B-Q4_K_M.gguf"
+            quant_label = "Q4_K_M (CPU-optimized)"
+            size_label = "~4.6 GB"
     else:
         model_file = "Qwen_Qwen3-8B-Q5_K_M.gguf"
         quant_label = "Q5_K_M (GPU-optimized)"
@@ -154,7 +167,7 @@ if __name__ == "__main__":
         install_hint(system, machine)
         print("Usage:")
         print("  python setup_model.py          # Auto-detect platform & download model")
-        print("  python setup_model.py --cpu     # Force CPU model (Q4_K_M)")
+        print("  python setup_model.py --cpu     # Force CPU model (Q4_K_M or Q3_K_M by RAM)")
         print("  python setup_model.py --gpu     # Force GPU model (Q5_K_M)")
         print("  python setup_model.py --help    # Show install instructions")
         sys.exit(0)
@@ -162,7 +175,7 @@ if __name__ == "__main__":
     # Allow forcing model variant
     if "--cpu" in sys.argv:
         gpu_backend = "cpu"
-        print("  ⚡ Forced CPU model (Q4_K_M)\n")
+        print("  ⚡ Forced CPU model\n")
     elif "--gpu" in sys.argv:
         gpu_backend = "gpu_override"
         print("  ⚡ Forced GPU model (Q5_K_M)\n")

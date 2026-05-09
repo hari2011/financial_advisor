@@ -3,6 +3,8 @@ Cross-platform detection for FinanceGPT.
 Auto-detects OS, architecture, GPU availability, and optimal settings.
 Runs at import time — used by config.py and engine.py.
 """
+from __future__ import annotations
+
 import os
 import platform
 import shutil
@@ -179,13 +181,14 @@ def compute_optimal_config(gpu: GPUInfo, ram_mb: int, cpu_threads: int) -> dict:
     is_cpu_only = gpu.backend == "cpu"
 
     # Context window: scale with available memory (smaller for CPU to save RAM)
+    # Smaller context = smaller KV cache = faster inference on CPU
     if is_cpu_only:
         if ram_mb >= 32768:
-            n_ctx = 16384       # 16K for 32GB+ CPU
+            n_ctx = 8192        # 8K for 32GB+ CPU (was 16K — too slow on CPU)
         elif ram_mb >= 16384:
-            n_ctx = 8192        # 8K for 16GB+ CPU
+            n_ctx = 4096        # 4K for 16GB+ CPU
         else:
-            n_ctx = 4096        # 4K for <16 GB CPU
+            n_ctx = 2048        # 2K for <16 GB CPU — minimum for usable responses
     else:
         if ram_mb >= 32768:
             n_ctx = 32768       # 32K for 32GB+ with GPU
@@ -208,8 +211,12 @@ def compute_optimal_config(gpu: GPUInfo, ram_mb: int, cpu_threads: int) -> dict:
     max_tokens = 4096 if n_ctx >= 16384 else 2048
 
     # Batch size: larger batches = faster prompt processing (prefill)
-    # GPU can handle large batches efficiently; CPU needs moderate batches
-    n_batch = 512 if is_cpu_only else 1024
+    # GPU can handle large batches; CPU benefits from smaller batches
+    # to reduce memory pressure and cache thrashing
+    if is_cpu_only:
+        n_batch = 256 if ram_mb < 16384 else 512
+    else:
+        n_batch = 1024
 
     return {
         "n_ctx": n_ctx,
@@ -235,7 +242,10 @@ OPTIMAL_CONFIG = compute_optimal_config(GPU, TOTAL_RAM_MB, CPU_THREADS)
 
 def print_system_info():
     """Pretty-print detected system info (called at startup)."""
-    model_quant = "Q4_K_M (CPU-optimized)" if GPU.backend == "cpu" else "Q5_K_M (GPU-optimized)"
+    if GPU.backend == "cpu":
+        model_quant = f"Q3_K_M (CPU-fast)" if TOTAL_RAM_MB < 16384 else "Q4_K_M (CPU-optimized)"
+    else:
+        model_quant = "Q5_K_M (GPU-optimized)"
     lines = [
         "╔══════════════════════════════════════════════════╗",
         "║          FinanceGPT — System Detection           ║",

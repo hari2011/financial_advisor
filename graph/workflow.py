@@ -7,6 +7,8 @@ Graph flow:
 
 State carries everything: query, routed agents, context, profile, response tokens.
 """
+from __future__ import annotations
+
 import re
 import time
 import json
@@ -245,7 +247,13 @@ def gather_context_node(state: dict) -> dict:
 
     with ThreadPoolExecutor(max_workers=6, thread_name_prefix="gather") as pool:
         futures = {}
-        futures[pool.submit(_smart_calc)] = "smart_calc"
+        # Use pre-computed smart_calc if available (overlapped with routing)
+        precalc = state.get("_precalc_result")
+        if precalc:
+            all_contexts.append(precalc)
+            logger.info(f"Using pre-computed smart_calc: {len(precalc)} chars")
+        else:
+            futures[pool.submit(_smart_calc)] = "smart_calc"
         # Skip deep research for simple queries (greetings, pure calculations)
         if complexity != "simple":
             futures[pool.submit(_deep_research)] = "deep_research"
@@ -325,6 +333,9 @@ def build_prompt_node(state: dict) -> dict:
         f"Date: {today}. Use [CONTEXT DATA] for current facts — do NOT guess. "
         "Use PRE-COMPUTED ₹ amounts directly — do NOT re-calculate. "
         "Cite web sources as [1],[2] inline. Sources list at end.\n"
+        "REASONING: Before answering, mentally identify: (1) What exactly the user needs, "
+        "(2) Which data/calculations to use, (3) Key assumptions to state. "
+        "Provide concrete ₹ numbers, not vague ranges. Show your work for calculations.\n"
         "OUTPUT STYLE: The user may not be a financial expert. Explain key concepts clearly "
         "so they understand WHY, not just WHAT. Use bullet points and tables for data. "
         "₹ in Lakhs/Crores. Stay focused on the core question — no generic greetings, "
@@ -424,10 +435,30 @@ def build_prompt_node(state: dict) -> dict:
                 system_prompt = system_prompt[:remaining - 100] + "\n[... prompt trimmed ...]\n"
 
     # ── Thinking mode directive ──
+    # Claude-like behavior: think before answering on non-trivial queries.
+    # GPU: moderate + complex get /think  |  CPU: only complex gets /think
     complexity = state.get("complexity", "moderate")
-    from config import THINKING_ENABLED
-    if THINKING_ENABLED and complexity == "complex":
-        system_prompt += "\nThink step-by-step before answering (keep reasoning under 200 words). /think"
+    from config import THINKING_ENABLED, IS_CPU_ONLY, THINKING_BUDGET_HINT
+    _should_think = False
+    if THINKING_ENABLED:
+        if IS_CPU_ONLY:
+            # CPU: only complex queries get thinking (saves time on moderate)
+            _should_think = complexity == "complex"
+        else:
+            # GPU: moderate + complex queries get thinking
+            _should_think = complexity in ("moderate", "complex")
+
+    if _should_think:
+        # Scale thinking budget by complexity
+        if complexity == "complex":
+            budget = THINKING_BUDGET_HINT
+        else:
+            budget = max(60, THINKING_BUDGET_HINT // 2)  # moderate = shorter thinking
+        system_prompt += (
+            f"\nThink step-by-step before answering. Structure your thinking as: "
+            f"1) Identify what the user needs, 2) Key data/calculations to use, "
+            f"3) Reasoning through the answer. Keep reasoning under {budget} words. /think"
+        )
     else:
         system_prompt += " /no_think"
 
@@ -738,12 +769,13 @@ async def stream_workflow(
     timings = {}  # step -> seconds
     pipeline_start = time.time()
 
-    # Pre-warm: kick off market prefetch in background while routing runs
-    # This overlaps I/O with the LLM router call, saving 1-2s
+    # Pre-warm: kick off market prefetch + smart_calc in background while routing runs
+    # Overlapping I/O with the LLM router call saves 1-3s total
     _prefetch_future = None
+    _precalc_future = None
     try:
         from concurrent.futures import ThreadPoolExecutor
-        _warmup_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="warmup")
+        _warmup_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="warmup")
         def _warm_market():
             try:
                 from tools.market_prefetch import is_prefetch_ready
@@ -753,6 +785,14 @@ async def stream_workflow(
             except Exception:
                 pass
         _prefetch_future = _warmup_pool.submit(_warm_market)
+        # Pre-run smart_calc (doesn't depend on routing result)
+        def _precalc():
+            try:
+                from tools.smart_calc import smart_calculate
+                return smart_calculate(query, profile)
+            except Exception:
+                return None
+        _precalc_future = _warmup_pool.submit(_precalc)
     except Exception:
         pass
 
@@ -770,6 +810,14 @@ async def stream_workflow(
     yield {"event": "status", "data": {"step": "context", "message": "Gathering market data & context..."}}
 
     # Step 2: Gather context (may be slow — web/market calls)
+    # Pass pre-computed smart_calc result to avoid redundant computation
+    if _precalc_future:
+        try:
+            precalc_result = _precalc_future.result(timeout=5)
+            if precalc_result:
+                input_state["_precalc_result"] = precalc_result
+        except Exception:
+            pass
     t_step = time.time()
     ctx_result = await asyncio.to_thread(gather_context_node, input_state)
     timings["context_gathering"] = round(time.time() - t_step, 2)
@@ -819,7 +867,8 @@ async def stream_workflow(
     think_token_count = 0
 
     while True:
-        token_data = await asyncio.to_thread(token_queue.get, True, 120.0)
+        from config import PER_TOKEN_TIMEOUT
+        token_data = await asyncio.to_thread(token_queue.get, True, PER_TOKEN_TIMEOUT)
         if token_data is None:
             break
         text, kind = token_data

@@ -40,6 +40,8 @@ pip install llama-cpp-python --prefer-binary
 ```
 This installs a pre-built wheel. It may not have GPU support, but will work for CPU mode.
 
+> **Cloud LLM users**: If you're using `USE_CLOUD_LLM=True` in config.py, `llama-cpp-python` is **not required at all**. You can skip this entirely and use any OpenAI-compatible API instead. See [Cloud LLM Setup](INSTALLATION.md#cloud-llm-setup).
+
 ---
 
 ### pip install -r requirements.txt fails
@@ -61,9 +63,9 @@ pip install llama-cpp-python --prefer-binary
 
 ### Python version too old
 
-**Symptoms**: `SyntaxError` or `Python 3.10+ required`
+**Symptoms**: `SyntaxError` or `Python 3.8+ required`
 
-**Fix**: Install Python 3.11+ from [python.org](https://www.python.org/downloads/)
+**Fix**: Install Python 3.8 or higher from [python.org](https://www.python.org/downloads/) (3.11+ recommended for best performance)
 
 Check your version:
 ```bash
@@ -115,7 +117,13 @@ brew install python@3.11
    "
    ```
 
-3. **Behind a proxy**: Set proxy environment variables:
+3. **Behind a proxy**: Configure the built-in proxy support:
+   ```python
+   # config.py
+   PROXY_ENABLED = True
+   PROXY_URL = "http://proxy.company.com:8080"
+   ```
+   Or set proxy environment variables:
    ```bash
    export HTTPS_PROXY=http://proxy.company.com:8080
    python3 start.py
@@ -188,18 +196,37 @@ If using `start.py`, it handles the venv automatically.
 
 ### Responses are very slow on CPU
 
-**Expected behavior**: CPU mode takes 15-40 seconds per response. This is normal for an 8B parameter model on CPU.
+**Expected behavior**: CPU mode takes 15-60 seconds per response depending on RAM and model. This is normal for an 8B parameter model on CPU.
+
+**Auto-tuning**: FinanceGPT now auto-selects the best model and settings for your RAM:
+- **<16 GB RAM**: Uses Q3_K_M (3.9 GB), 2K context, 256 batch — fastest CPU inference
+- **16 GB+ RAM**: Uses Q4_K_M (4.6 GB), 4K context, 512 batch — better quality
 
 **Why it's slower than GPU**: CPUs process matrix multiplications sequentially, while GPUs process them in parallel. An Apple M3 Pro achieves ~20 tok/s on GPU vs ~8 tok/s on the same chip's CPU.
 
 **Tips to speed up:**
 
 | Tip | How | Speedup |
-|-----|-----|---------|
+|-----|-----|--------|
 | Use GPU | Already auto-detected — check startup banner | 3-5x |
-| Reduce context | `LLM_CONFIG["n_ctx"] = 4096` in config.py | ~20% |
+| Force Q3_K_M | `MODEL_FILE = "Qwen_Qwen3-8B-Q3_K_M.gguf"` in config.py | ~15-20% |
+| Reduce context | `LLM_CONFIG["n_ctx"] = 2048` in config.py | ~20% |
 | Shorter responses | `RESPONSE_MAX_TOKENS = 1024` in config.py | Proportional |
+| Use cloud LLM | Set `USE_CLOUD_LLM=True` — instant responses via API | 10-50x |
 | Close other apps | Free up RAM and CPU | Variable |
+
+---
+
+### Generation timeout on CPU
+
+**Symptoms**: Response stops mid-way, or `token_queue.get` timeout error in logs
+
+**Cause**: Per-token wait time exceeded `PER_TOKEN_TIMEOUT` (default: 300s for CPU, 120s for GPU)
+
+**Fix**: Increase the timeout in config.py:
+```python
+PER_TOKEN_TIMEOUT = 600   # 10 minutes for very slow CPU
+```
 
 ---
 
@@ -238,15 +265,18 @@ LLM_CONFIG["n_ctx"] = 8192          # Smaller context window
 LLM_CONFIG["n_gpu_layers"] = 20     # Partial GPU offload (instead of all)
 ```
 
-Or use the smaller model:
+Or use the smaller model (auto-selected for <16 GB RAM):
 ```python
-MODEL_FILE = "Qwen_Qwen3-8B-Q4_K_M.gguf"   # 4.6 GB instead of 5.5 GB
+MODEL_FILE = "Qwen_Qwen3-8B-Q3_K_M.gguf"   # 3.9 GB — auto-selected for <16 GB RAM
+# or
+MODEL_FILE = "Qwen_Qwen3-8B-Q4_K_M.gguf"   # 4.6 GB — auto-selected for CPU 16 GB+
 ```
 
 **RAM requirements:**
 
 | Model | RAM Needed (approx) |
 |-------|-------------------|
+| Q3_K_M + 2K context | ~5 GB |
 | Q4_K_M + 4K context | ~6 GB |
 | Q4_K_M + 8K context | ~8 GB |
 | Q5_K_M + 16K context | ~12 GB |
@@ -295,14 +325,21 @@ If any test fails, check `tools/financial_calc.py` for recent changes.
 
 ### Market data not loading / ticker empty
 
-**Cause**: No internet connection, or yfinance API issues
+**Cause**: No internet connection, yfinance API issues, or proxy misconfiguration
 
 **Fixes:**
 1. Check internet: `ping google.com`
 2. Check if yfinance works: `python -c "import yfinance; print(yfinance.Ticker('^NSEI').info.get('regularMarketPrice'))"`
 3. Check firewall/proxy settings — yfinance needs access to `query1.finance.yahoo.com`
+4. If behind a corporate proxy, configure in config.py:
+   ```python
+   PROXY_ENABLED = True
+   PROXY_URL = "http://proxy.company.com:8080"
+   ```
 
 **Note**: The AI still works without market data — it just won't include live prices.
+
+> **curl_cffi errors**: If you see `ImportError: curl_cffi` in logs, this is harmless. FinanceGPT uses a shared `requests.Session` with proper headers, bypassing the `curl_cffi` dependency entirely.
 
 ---
 
@@ -398,4 +435,23 @@ If none of the above resolves your issue:
 2. **Run health check**: `curl http://localhost:8501/api/health`
 3. **Run calculator tests**: `python test_cross_ref.py`
 4. **Check hardware detection**: Look at the startup banner output
+
+---
+
+### Cloud LLM Issues
+
+**"Cloud LLM misconfigured" error**:
+- Verify `CLOUD_LLM["api_base"]` and `CLOUD_LLM["model"]` are set in config.py
+- Ensure `USE_CLOUD_LLM = True`
+
+**API key errors (401/403)**:
+- Set the key via environment variable: `export FINANCEGPT_CLOUD_API_KEY="sk-..."`
+- Check the key is valid for your provider
+
+**Timeout errors**:
+- Increase `CLOUD_LLM["timeout"]` in config.py (default: 60s)
+
+**Wrong model name**:
+- Each provider has different model names. Check your provider's docs
+- OpenAI: `gpt-4o-mini` | Groq: `llama-3.1-70b-versatile` | Gemini: `gemini-2.0-flash`
 5. **Verify model**: `ls -la models/` should show a ~4-5 GB `.gguf` file
