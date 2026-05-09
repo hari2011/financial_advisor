@@ -3806,6 +3806,22 @@
                     change_pct: snapshot.gold.change_pct || 0,
                 });
             }
+            // Silver
+            if (snapshot.silver && snapshot.silver.price_per_kg) {
+                items.push({
+                    name: 'Silver/kg',
+                    price: '₹' + snapshot.silver.price_per_kg.toLocaleString('en-IN', {maximumFractionDigits: 0}),
+                    change_pct: snapshot.silver.change_pct || 0,
+                });
+            }
+            // Platinum
+            if (snapshot.platinum && snapshot.platinum.price_per_10g) {
+                items.push({
+                    name: 'Platinum/10g',
+                    price: '₹' + snapshot.platinum.price_per_10g.toLocaleString('en-IN', {maximumFractionDigits: 0}),
+                    change_pct: snapshot.platinum.change_pct || 0,
+                });
+            }
             // Forex
             if (snapshot.forex) {
                 for (const [, fx] of Object.entries(snapshot.forex)) {
@@ -3950,7 +3966,7 @@
                 html += '<div class="market-section">';
                 html += '<div class="market-section-title">🥇 Gold & Precious Metals</div>';
                 html += '<div class="market-grid">';
-                const goldItems = [
+                const metalItems = [
                     { name: 'Gold 24K (per gram)', price: '₹' + (g.price_per_gram_24k || 0).toLocaleString('en-IN'), pct: g.change_pct || 0 },
                     { name: 'Gold 24K (per 10g)', price: '₹' + (g.price_per_10g_24k || 0).toLocaleString('en-IN'), pct: g.change_pct || 0 },
                     { name: 'Gold 22K (per gram)', price: '₹' + (g.price_per_gram_22k || 0).toLocaleString('en-IN'), pct: g.change_pct || 0 },
@@ -3959,7 +3975,25 @@
                     { name: 'Gold 18K (per 10g)', price: '₹' + (g.price_per_10g_18k || 0).toLocaleString('en-IN'), pct: g.change_pct || 0 },
                     { name: 'Gold (International)', price: '$' + (g.price_per_oz_usd || 0).toLocaleString('en-US', {maximumFractionDigits: 2}) + '/oz', pct: g.change_pct || 0 },
                 ];
-                for (const item of goldItems) {
+                // Silver
+                if (tickerData.silver) {
+                    const s = tickerData.silver;
+                    metalItems.push(
+                        { name: 'Silver 999 (per gram)', price: '₹' + (s.price_per_gram || 0).toLocaleString('en-IN', {maximumFractionDigits: 2}), pct: s.change_pct || 0 },
+                        { name: 'Silver 999 (per kg)', price: '₹' + (s.price_per_kg || 0).toLocaleString('en-IN'), pct: s.change_pct || 0 },
+                        { name: 'Silver (International)', price: '$' + (s.price_per_oz_usd || 0).toLocaleString('en-US', {maximumFractionDigits: 2}) + '/oz', pct: s.change_pct || 0 },
+                    );
+                }
+                // Platinum
+                if (tickerData.platinum) {
+                    const p = tickerData.platinum;
+                    metalItems.push(
+                        { name: 'Platinum 999 (per gram)', price: '₹' + (p.price_per_gram || 0).toLocaleString('en-IN', {maximumFractionDigits: 2}), pct: p.change_pct || 0 },
+                        { name: 'Platinum 999 (per 10g)', price: '₹' + (p.price_per_10g || 0).toLocaleString('en-IN'), pct: p.change_pct || 0 },
+                        { name: 'Platinum (International)', price: '$' + (p.price_per_oz_usd || 0).toLocaleString('en-US', {maximumFractionDigits: 2}) + '/oz', pct: p.change_pct || 0 },
+                    );
+                }
+                for (const item of metalItems) {
                     if (item.price === '₹0' || item.price === '$0/oz') continue;
                     html += `<div class="market-card">
                         <div class="market-card-name">${item.name}</div>

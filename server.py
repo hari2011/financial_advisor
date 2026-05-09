@@ -423,6 +423,26 @@ async def market_gold():
     return result
 
 
+@app.get("/api/market/silver")
+async def market_silver():
+    """Get live silver price in INR per gram, per 10g, and per kg."""
+    from tools.live_market import get_silver_price_inr
+    result = await asyncio.to_thread(get_silver_price_inr)
+    if not result:
+        return JSONResponse({"error": "Silver price unavailable"}, status_code=503)
+    return result
+
+
+@app.get("/api/market/platinum")
+async def market_platinum():
+    """Get live platinum price in INR per gram and per 10g."""
+    from tools.live_market import get_platinum_price_inr
+    result = await asyncio.to_thread(get_platinum_price_inr)
+    if not result:
+        return JSONResponse({"error": "Platinum price unavailable"}, status_code=503)
+    return result
+
+
 @app.get("/api/market/forex")
 async def market_forex():
     """Get live forex rates (USD/INR, EUR/INR, GBP/INR)."""

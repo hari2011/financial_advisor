@@ -35,29 +35,18 @@ def _get_proxies() -> dict:
         return {}
 
 
-def _make_yf_session():
-    """Create a requests session for yfinance that works with or without curl_cffi.
-
-    yfinance >=0.2.31 tries to use curl_cffi for TLS impersonation, which may
-    not be installed on all platforms. This creates a compatible session with
-    proxy support and proper headers.
-    """
+def _set_yf_proxy_env():
+    """Set HTTP_PROXY / HTTPS_PROXY env vars so yfinance's native session
+    (curl_cffi or requests) picks up proxy config automatically."""
     proxies = _get_proxies()
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        )
-    })
     if proxies:
-        session.proxies.update(proxies)
-    return session
+        if "http" in proxies and "HTTP_PROXY" not in os.environ:
+            os.environ["HTTP_PROXY"] = proxies["http"]
+        if "https" in proxies and "HTTPS_PROXY" not in os.environ:
+            os.environ["HTTPS_PROXY"] = proxies["https"]
 
 
-# Shared session for all yfinance calls (avoids curl_cffi import issues)
-_yf_session = _make_yf_session()
+_set_yf_proxy_env()
 
 # ──────────────────────── Cache ────────────────────────
 
@@ -175,7 +164,7 @@ _LOAN_RATES = {
 def _yf_quote(symbol: str) -> dict | None:
     """Fetch a single quote from yfinance. Returns dict with price data or None."""
     try:
-        tk = yf.Ticker(symbol, session=_yf_session)
+        tk = yf.Ticker(symbol)
         fi = tk.fast_info
         price = fi.last_price
         if price is None:
@@ -285,10 +274,74 @@ def get_forex() -> dict:
     return result
 
 
+def _fetch_ibja_rates() -> dict | None:
+    """Fetch gold, silver, and platinum rates from IBJA (Indian Bullion Jewellers Association).
+
+    Returns per-gram gold rates (999/916/750/585 purity), silver per kg, and
+    platinum per 10g — all without GST. Also returns previous-day rates for
+    change % calculation.
+
+    IBJA is the official domestic rate setter — same source as Groww, ET, etc.
+    """
+    try:
+        from bs4 import BeautifulSoup
+        r = requests.get(
+            "https://ibjarates.com/",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=8,
+            proxies=_get_proxies(),
+        )
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        rates = {}
+        # Gold cards: per gram, today's latest rate
+        for purity in ("999", "995", "916", "750", "585"):
+            el = soup.find(id=f"GoldRatesCompare{purity}")
+            if el:
+                val = el.get_text(strip=True).replace(",", "")
+                if val.isdigit():
+                    rates[f"gold_{purity}"] = int(val)  # per gram
+
+        # Historical tables: AM (table index 2) and PM (table index 3)
+        # Columns: date, 999, 995, 916, 750, 585, Silver 999, Platinum 999
+        # Gold values = per 10g, Silver = per kg, Platinum = per 10g
+        tables = soup.find_all("table")
+        if len(tables) >= 4:
+            # Use PM table (index 3) for latest full-day rates
+            pm_rows = tables[3].find_all("tr")
+            if len(pm_rows) >= 2:
+                latest = [c.get_text(strip=True) for c in pm_rows[1].find_all("td")]
+                if len(latest) >= 8:
+                    if latest[6].isdigit():
+                        rates["silver_999_per_kg"] = int(latest[6])
+                    if latest[7].isdigit():
+                        rates["platinum_999_per_10g"] = int(latest[7])
+
+                # Previous day for change %
+                if len(pm_rows) >= 3:
+                    prev = [c.get_text(strip=True) for c in pm_rows[2].find_all("td")]
+                    if len(prev) >= 8:
+                        if prev[1].isdigit():
+                            rates["prev_gold_999_10g"] = int(prev[1])
+                        if prev[6].isdigit():
+                            rates["prev_silver_999_per_kg"] = int(prev[6])
+                        if prev[7].isdigit():
+                            rates["prev_platinum_999_per_10g"] = int(prev[7])
+
+        if "gold_999" not in rates:
+            return None
+        return rates
+    except Exception as e:
+        logger.debug(f"IBJA fetch failed: {e}")
+        return None
+
+
 def _fetch_gold_spot_usd() -> float | None:
     """Fetch real-time gold spot price (XAU/USD) from Swissquote public feed.
 
     Returns gold spot price in USD/oz, or None on failure.
+    Used as fallback when IBJA is unavailable, and for international price display.
     """
     try:
         r = requests.get(
@@ -307,13 +360,13 @@ def _fetch_gold_spot_usd() -> float | None:
 
 
 def get_gold_price_inr() -> dict | None:
-    """Get gold price in INR per gram — matching Indian domestic market rates.
+    """Get gold price in INR per gram — IBJA domestic rates (same as Groww).
 
-    Data flow (same as Groww / IBJA methodology):
-      1. Gold spot USD/oz  → Swissquote real-time feed (primary)
-         fallback          → GC=F COMEX futures via yfinance
-      2. USD/INR           → yfinance (INR=X)
-      3. Indian duties     → 6 % customs (Budget 2024) + 3 % GST = ×1.0918
+    Data flow:
+      Primary: IBJA (ibjarates.com) — official Indian domestic gold rates
+               Per-gram rates for 999 (24K), 916 (22K), 750 (18K) purity
+               + 3 % GST (IBJA publishes ex-GST rates)
+      Fallback: XAU/USD spot × USD/INR × duties (international derivation)
 
     Cached for 5 minutes.
     """
@@ -321,8 +374,66 @@ def get_gold_price_inr() -> dict | None:
     if cached:
         return cached
 
-    # --- gold price in USD per troy ounce ---
-    gold_usd_oz = _fetch_gold_spot_usd()       # real-time spot
+    # --- Try IBJA first (domestic rates, matches Groww) ---
+    ibja = _fetch_ibja_rates()
+    if ibja and "gold_999" in ibja:
+        # IBJA publishes ex-GST rates; Groww also displays ex-GST, so no markup
+        gold_24k_per_gram = float(ibja["gold_999"])
+        gold_24k_per_10g = round(gold_24k_per_gram * 10, 2)
+
+        if "gold_916" in ibja:
+            gold_22k_per_gram = float(ibja["gold_916"])
+        else:
+            gold_22k_per_gram = round(gold_24k_per_gram * 22 / 24, 2)
+        gold_22k_per_10g = round(gold_22k_per_gram * 10, 2)
+
+        if "gold_750" in ibja:
+            gold_18k_per_gram = float(ibja["gold_750"])
+        else:
+            gold_18k_per_gram = round(gold_24k_per_gram * 18 / 24, 2)
+        gold_18k_per_10g = round(gold_18k_per_gram * 10, 2)
+
+        # Change % from previous day
+        change_pct = 0.0
+        prev_10g = ibja.get("prev_gold_999_10g")
+        if prev_10g and prev_10g > 0:
+            cur_10g = ibja["gold_999"] * 10  # compare ex-GST to ex-GST
+            change_pct = round((cur_10g - prev_10g) / prev_10g * 100, 2)
+
+        # International price for display (best-effort, non-blocking)
+        gold_usd_oz = _fetch_gold_spot_usd()
+        if gold_usd_oz is None:
+            commodities = get_commodities()
+            gc = commodities.get("gold_usd")
+            if gc:
+                gold_usd_oz = gc["price"]
+        if gold_usd_oz is None:
+            gold_usd_oz = 0.0
+
+        forex = get_forex()
+        usd_inr = forex.get("usd_inr")
+        inr_rate = usd_inr["price"] if usd_inr else 0.0
+
+        result = {
+            "price_per_gram": gold_24k_per_gram,
+            "price_per_10g": gold_24k_per_10g,
+            "price_per_gram_24k": gold_24k_per_gram,
+            "price_per_10g_24k": gold_24k_per_10g,
+            "price_per_gram_22k": gold_22k_per_gram,
+            "price_per_10g_22k": gold_22k_per_10g,
+            "price_per_gram_18k": gold_18k_per_gram,
+            "price_per_10g_18k": gold_18k_per_10g,
+            "price_per_oz_usd": gold_usd_oz,
+            "usd_inr_rate": inr_rate,
+            "change_pct": change_pct,
+            "source": "IBJA",
+        }
+        _set_cached("gold_inr_gram", result)
+        return result
+
+    # --- Fallback: international spot derivation ---
+    logger.info("IBJA unavailable, falling back to international spot derivation")
+    gold_usd_oz = _fetch_gold_spot_usd()
     source = "XAU/USD spot"
     if gold_usd_oz is None:
         commodities = get_commodities()
@@ -334,28 +445,21 @@ def get_gold_price_inr() -> dict | None:
     if not gold_usd_oz:
         return None
 
-    # --- USD → INR ---
     forex = get_forex()
     usd_inr = forex.get("usd_inr")
     inr_rate = usd_inr["price"] if usd_inr else None
     if not inr_rate:
         return None
 
-    # --- convert to INR per gram with Indian duties ---
-    # Customs duty: 6 % (Union Budget 2024), GST: 3 %
     DOMESTIC_FACTOR = (1 + 0.06) * (1 + 0.03)   # 1.0918
     gold_usd_per_gram = gold_usd_oz / 31.1035
     gold_24k_per_gram = round(gold_usd_per_gram * inr_rate * DOMESTIC_FACTOR, 2)
-
     gold_24k_per_10g = round(gold_24k_per_gram * 10, 2)
-    # 22K = 22/24 purity ratio (standard IBJA / Groww methodology)
     gold_22k_per_gram = round(gold_24k_per_gram * 22 / 24, 2)
     gold_22k_per_10g = round(gold_22k_per_gram * 10, 2)
-    # 18K = 18/24 purity ratio
     gold_18k_per_gram = round(gold_24k_per_gram * 18 / 24, 2)
     gold_18k_per_10g = round(gold_18k_per_gram * 10, 2)
 
-    # change % from yfinance commodity data (if available)
     change_pct = 0.0
     try:
         commodities = get_commodities()
@@ -378,9 +482,140 @@ def get_gold_price_inr() -> dict | None:
         "change_pct": change_pct,
         "source": source,
     }
-
     _set_cached("gold_inr_gram", result)
     return result
+
+
+def get_silver_price_inr() -> dict | None:
+    """Get silver price in INR — IBJA domestic rates.
+
+    Returns silver price per gram, per 10g, and per kg.
+    IBJA publishes silver 999 purity per kg (ex-GST).
+    Cached for 5 minutes.
+    """
+    cached = _get_cached("silver_inr", 300)
+    if cached:
+        return cached
+
+    ibja = _fetch_ibja_rates()
+    if ibja and "silver_999_per_kg" in ibja:
+        price_per_kg = float(ibja["silver_999_per_kg"])
+        price_per_10g = round(price_per_kg / 100, 2)
+        price_per_gram = round(price_per_kg / 1000, 2)
+
+        change_pct = 0.0
+        prev_kg = ibja.get("prev_silver_999_per_kg")
+        if prev_kg and prev_kg > 0:
+            change_pct = round((price_per_kg - prev_kg) / prev_kg * 100, 2)
+
+        # International price for display
+        silver_usd_oz = None
+        commodities = get_commodities()
+        si = commodities.get("silver_usd")
+        if si:
+            silver_usd_oz = si["price"]
+
+        result = {
+            "name": "Silver 999",
+            "price_per_gram": price_per_gram,
+            "price_per_10g": price_per_10g,
+            "price_per_kg": price_per_kg,
+            "price_per_oz_usd": silver_usd_oz or 0.0,
+            "change_pct": change_pct,
+            "source": "IBJA",
+        }
+        _set_cached("silver_inr", result)
+        return result
+
+    # Fallback: yfinance SI=F
+    commodities = get_commodities()
+    si = commodities.get("silver_usd")
+    if not si:
+        return None
+    forex = get_forex()
+    usd_inr = forex.get("usd_inr")
+    if not usd_inr:
+        return None
+    inr_rate = usd_inr["price"]
+    price_per_gram = round(si["price"] * inr_rate / 31.1035, 2)
+    price_per_kg = round(price_per_gram * 1000, 2)
+    result = {
+        "name": "Silver 999",
+        "price_per_gram": price_per_gram,
+        "price_per_10g": round(price_per_gram * 10, 2),
+        "price_per_kg": price_per_kg,
+        "price_per_oz_usd": si["price"],
+        "change_pct": si.get("change_pct", 0.0),
+        "source": "SI=F",
+    }
+    _set_cached("silver_inr", result)
+    return result
+
+
+def get_platinum_price_inr() -> dict | None:
+    """Get platinum price in INR — IBJA domestic rates.
+
+    Returns platinum price per gram and per 10g.
+    IBJA publishes platinum 999 purity per 10g (ex-GST).
+    Cached for 5 minutes.
+    """
+    cached = _get_cached("platinum_inr", 300)
+    if cached:
+        return cached
+
+    ibja = _fetch_ibja_rates()
+    if ibja and "platinum_999_per_10g" in ibja:
+        price_per_10g = float(ibja["platinum_999_per_10g"])
+        price_per_gram = round(price_per_10g / 10, 2)
+
+        change_pct = 0.0
+        prev_10g = ibja.get("prev_platinum_999_per_10g")
+        if prev_10g and prev_10g > 0:
+            change_pct = round((price_per_10g - prev_10g) / prev_10g * 100, 2)
+
+        # International price for display
+        platinum_usd_oz = None
+        try:
+            quote = _yf_quote("PL=F")
+            if quote:
+                platinum_usd_oz = quote["price"]
+        except Exception:
+            pass
+
+        result = {
+            "name": "Platinum 999",
+            "price_per_gram": price_per_gram,
+            "price_per_10g": price_per_10g,
+            "price_per_oz_usd": platinum_usd_oz or 0.0,
+            "change_pct": change_pct,
+            "source": "IBJA",
+        }
+        _set_cached("platinum_inr", result)
+        return result
+
+    # Fallback: yfinance PL=F
+    try:
+        quote = _yf_quote("PL=F")
+        if not quote:
+            return None
+        forex = get_forex()
+        usd_inr = forex.get("usd_inr")
+        if not usd_inr:
+            return None
+        inr_rate = usd_inr["price"]
+        price_per_gram = round(quote["price"] * inr_rate / 31.1035, 2)
+        result = {
+            "name": "Platinum 999",
+            "price_per_gram": price_per_gram,
+            "price_per_10g": round(price_per_gram * 10, 2),
+            "price_per_oz_usd": quote["price"],
+            "change_pct": quote.get("change_pct", 0.0),
+            "source": "PL=F",
+        }
+        _set_cached("platinum_inr", result)
+        return result
+    except Exception:
+        return None
 
 
 def get_stock_quote(symbol: str) -> dict | None:
@@ -609,6 +844,16 @@ def get_market_snapshot() -> dict:
     if gold:
         snapshot["gold"] = gold
 
+    # Silver price in INR
+    silver = get_silver_price_inr()
+    if silver:
+        snapshot["silver"] = silver
+
+    # Platinum price in INR
+    platinum = get_platinum_price_inr()
+    if platinum:
+        snapshot["platinum"] = platinum
+
     # Forex
     forex = get_forex()
     if forex:
@@ -651,6 +896,24 @@ def format_market_snapshot(snapshot: dict) -> str:
         lines.append(f"    • 22K Gold: ₹{gold['price_per_10g_22k']:,.0f}/10g | ₹{gold['price_per_gram_22k']:,.0f}/g")
         lines.append(f"    • 18K Gold: ₹{gold['price_per_10g_18k']:,.0f}/10g | ₹{gold['price_per_gram_18k']:,.0f}/g")
         lines.append(f"    • Gold (intl): ${gold['price_per_oz_usd']:,.2f}/oz")
+
+    # Silver
+    silver = snapshot.get("silver")
+    if silver:
+        lines.append("  [Silver]")
+        sign = "+" if silver["change_pct"] >= 0 else ""
+        lines.append(f"    • Silver 999: ₹{silver['price_per_kg']:,.0f}/kg | ₹{silver['price_per_gram']:,.0f}/g ({sign}{silver['change_pct']:.2f}%)")
+        if silver.get("price_per_oz_usd"):
+            lines.append(f"    • Silver (intl): ${silver['price_per_oz_usd']:,.2f}/oz")
+
+    # Platinum
+    platinum = snapshot.get("platinum")
+    if platinum:
+        lines.append("  [Platinum]")
+        sign = "+" if platinum["change_pct"] >= 0 else ""
+        lines.append(f"    • Platinum 999: ₹{platinum['price_per_10g']:,.0f}/10g | ₹{platinum['price_per_gram']:,.0f}/g ({sign}{platinum['change_pct']:.2f}%)")
+        if platinum.get("price_per_oz_usd"):
+            lines.append(f"    • Platinum (intl): ${platinum['price_per_oz_usd']:,.2f}/oz")
 
     # Forex
     forex = snapshot.get("forex", {})

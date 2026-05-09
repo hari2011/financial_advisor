@@ -259,8 +259,8 @@ class BaseAgent:
         """Detect if query needs live market data and fetch from cached live APIs.
         Uses tools/live_market.py which has in-memory caching (instant on repeat calls)."""
         from tools.live_market import (
-            get_gold_price_inr, get_indices, get_forex,
-            get_commodities, get_fd_rates,
+            get_gold_price_inr, get_silver_price_inr, get_platinum_price_inr,
+            get_indices, get_forex, get_commodities, get_fd_rates,
         )
 
         q = query.lower()
@@ -270,6 +270,7 @@ class BaseAgent:
         gold_kw = ["gold", "sona", "sovereign gold", "sgb", "gold rate",
                     "gold price", "jewel", "22 carat", "24 carat", "hallmark"]
         silver_kw = ["silver", "chandi"]
+        platinum_kw = ["platinum"]
         idx_kw = ["nifty", "sensex", "market today", "stock market", "share market",
                   "market crash", "market rally", "bull market", "bear market"]
         fx_kw = ["dollar", "usd", "forex", "exchange rate", "usd/inr",
@@ -282,6 +283,7 @@ class BaseAgent:
 
         need_gold = any(w in q for w in gold_kw)
         need_silver = any(w in q for w in silver_kw)
+        need_platinum = any(w in q for w in platinum_kw)
         need_idx = any(w in q for w in idx_kw)
         need_fx = any(w in q for w in fx_kw)
         need_oil = any(w in q for w in oil_kw)
@@ -292,7 +294,7 @@ class BaseAgent:
                 gold = get_gold_price_inr()
                 if gold:
                     parts.append(
-                        f"LIVE GOLD PRICES (per 10g):\n"
+                        f"LIVE GOLD PRICES (per 10g, source: {gold.get('source', 'IBJA')}):\n"
                         f"  24K: ₹{gold['price_per_10g_24k']:,.0f} (₹{gold['price_per_gram_24k']:,.0f}/g) — pure gold, investment grade\n"
                         f"  22K: ₹{gold['price_per_10g_22k']:,.0f} (₹{gold['price_per_gram_22k']:,.0f}/g) — standard jewelry gold in India\n"
                         f"  18K: ₹{gold['price_per_10g_18k']:,.0f} (₹{gold['price_per_gram_18k']:,.0f}/g) — premium jewelry\n"
@@ -301,17 +303,27 @@ class BaseAgent:
                     )
 
             if need_silver:
-                commodities = get_commodities()
-                silver = commodities.get("Silver")
+                silver = get_silver_price_inr()
                 if silver:
-                    # Convert USD/oz to INR/kg
-                    forex = get_forex()
-                    usd_inr = forex.get("USD/INR", {}).get("rate", 84)
-                    silver_inr_kg = round(silver["price"] * usd_inr / 31.1035 * 1000, 0)
                     parts.append(
-                        f"LIVE SILVER PRICE: ₹{silver_inr_kg:,.0f}/kg | "
-                        f"${silver['price']:,.2f}/troy oz"
+                        f"LIVE SILVER PRICE (source: {silver.get('source', 'IBJA')}):\n"
+                        f"  Silver 999: ₹{silver['price_per_kg']:,.0f}/kg | "
+                        f"₹{silver['price_per_gram']:,.2f}/g | "
+                        f"₹{silver['price_per_10g']:,.2f}/10g"
                     )
+                    if silver.get("price_per_oz_usd"):
+                        parts[-1] += f"\n  International: ${silver['price_per_oz_usd']:,.2f}/troy oz"
+
+            if need_platinum:
+                platinum = get_platinum_price_inr()
+                if platinum:
+                    parts.append(
+                        f"LIVE PLATINUM PRICE (source: {platinum.get('source', 'IBJA')}):\n"
+                        f"  Platinum 999: ₹{platinum['price_per_10g']:,.0f}/10g | "
+                        f"₹{platinum['price_per_gram']:,.2f}/g"
+                    )
+                    if platinum.get("price_per_oz_usd"):
+                        parts[-1] += f"\n  International: ${platinum['price_per_oz_usd']:,.2f}/troy oz"
 
             if need_idx:
                 indices = get_indices()
