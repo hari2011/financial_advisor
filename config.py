@@ -100,6 +100,43 @@ DEFAULT_EXCHANGE = "NSE"  # National Stock Exchange of India
 # 1 Lakh = 1,00,000 | 1 Crore = 1,00,00,000
 INDIAN_NUMBER_SYSTEM = True
 
+# ──────────────────────── Portfolio / DMAT Integration ────────────────────────
+PORTFOLIO_DB = os.path.join(BASE_DIR, "data", "portfolio.db")
+
+# Broker API credentials — set via environment variables for security.
+# Format: FINANCEGPT_<BROKER>_API_KEY, FINANCEGPT_<BROKER>_API_SECRET
+BROKER_CONFIGS: dict[str, dict] = {
+    "zerodha": {
+        "api_key": os.environ.get("FINANCEGPT_ZERODHA_API_KEY", ""),
+        "api_secret": os.environ.get("FINANCEGPT_ZERODHA_API_SECRET", ""),
+    },
+    "upstox": {
+        "api_key": os.environ.get("FINANCEGPT_UPSTOX_API_KEY", ""),
+        "api_secret": os.environ.get("FINANCEGPT_UPSTOX_API_SECRET", ""),
+    },
+    "angelone": {
+        "api_key": os.environ.get("FINANCEGPT_ANGELONE_API_KEY", ""),
+        "api_secret": os.environ.get("FINANCEGPT_ANGELONE_API_SECRET", ""),
+    },
+    "dhan": {
+        "api_key": os.environ.get("FINANCEGPT_DHAN_API_KEY", ""),
+        "api_secret": os.environ.get("FINANCEGPT_DHAN_API_SECRET", ""),
+    },
+    "fivepaisa": {
+        "api_key": os.environ.get("FINANCEGPT_FIVEPAISA_API_KEY", ""),
+        "api_secret": os.environ.get("FINANCEGPT_FIVEPAISA_API_SECRET", ""),
+        "encryption_key": os.environ.get("FINANCEGPT_FIVEPAISA_ENCRYPTION_KEY", ""),
+    },
+    "icici_direct": {
+        "api_key": os.environ.get("FINANCEGPT_ICICI_API_KEY", ""),
+        "api_secret": os.environ.get("FINANCEGPT_ICICI_API_SECRET", ""),
+    },
+    "kotak": {
+        "api_key": os.environ.get("FINANCEGPT_KOTAK_API_KEY", ""),
+        "api_secret": os.environ.get("FINANCEGPT_KOTAK_API_SECRET", ""),
+    },
+}
+
 # ──────────────────────── Proxy & Network (Air-tight Environments) ────────────────────────
 # Enable PROXY_ENABLED and set PROXY_URL to route HTTP/HTTPS traffic through a proxy.
 # Useful for corporate/air-gapped networks. Disable when direct internet access is available.

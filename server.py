@@ -494,6 +494,151 @@ async def market_rates():
     return get_fd_rates()
 
 
+# ──────────────────────── Portfolio / DMAT API ────────────────────────
+
+@app.get("/api/portfolio/brokers")
+async def portfolio_brokers():
+    """List all supported broker platforms with metadata."""
+    from tools.portfolio.broker_registry import list_brokers
+    return list_brokers()
+
+
+@app.get("/api/portfolio/accounts")
+async def portfolio_accounts():
+    """List all linked broker accounts (tokens stripped)."""
+    from tools.portfolio.portfolio_manager import get_accounts
+    accounts = get_accounts()
+    return [a.to_dict() for a in accounts]
+
+
+@app.post("/api/portfolio/accounts")
+async def portfolio_add_account(request: Request):
+    """Link a new broker account."""
+    from tools.portfolio.portfolio_manager import add_account
+    body = await request.json()
+    broker_id = body.get("broker", "").strip()
+    if not broker_id:
+        return JSONResponse({"error": "Missing 'broker' field"}, status_code=400)
+    try:
+        acct = add_account(
+            broker_id=broker_id,
+            client_id=body.get("client_id", ""),
+            display_name=body.get("display_name", ""),
+            api_key=body.get("api_key", ""),
+            access_token=body.get("access_token", ""),
+            auth_type=body.get("auth_type", ""),
+        )
+        return acct.to_dict()
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.delete("/api/portfolio/accounts/{account_id}")
+async def portfolio_remove_account(account_id: str):
+    """Unlink a broker account and delete its holdings."""
+    from tools.portfolio.portfolio_manager import remove_account
+    remove_account(account_id)
+    return {"status": "ok"}
+
+
+@app.post("/api/portfolio/sync/{account_id}")
+async def portfolio_sync(account_id: str):
+    """Sync holdings from broker API for an account."""
+    from tools.portfolio.portfolio_manager import sync_account
+    result = await asyncio.to_thread(sync_account, account_id)
+    if result.get("errors"):
+        return JSONResponse(result, status_code=400 if not result.get("holdings") else 200)
+    return result
+
+
+@app.get("/api/portfolio/auth/{broker_id}/url")
+async def portfolio_auth_url(broker_id: str, redirect_uri: str = ""):
+    """Get the OAuth/login URL for a broker."""
+    from tools.portfolio.portfolio_manager import get_auth_url
+    from config import BROKER_CONFIGS
+    creds = BROKER_CONFIGS.get(broker_id, {})
+    try:
+        url = get_auth_url(
+            broker_id,
+            api_key=creds.get("api_key", ""),
+            api_secret=creds.get("api_secret", ""),
+            redirect_uri=redirect_uri,
+        )
+        return {"url": url}
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.post("/api/portfolio/auth/{account_id}/callback")
+async def portfolio_auth_callback(account_id: str, request: Request):
+    """Complete OAuth with the auth code from broker callback."""
+    from tools.portfolio.portfolio_manager import complete_auth
+    body = await request.json()
+    auth_code = body.get("auth_code", "").strip()
+    if not auth_code:
+        return JSONResponse({"error": "Missing 'auth_code'"}, status_code=400)
+    try:
+        result = await asyncio.to_thread(
+            complete_auth, account_id, auth_code, body.get("redirect_uri", "")
+        )
+        return {"status": "ok", "client_id": result.get("client_id", "")}
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.get("/api/portfolio/holdings")
+async def portfolio_holdings(account_id: str = ""):
+    """Get enriched holdings (live prices + P&L), optionally filtered by account."""
+    from tools.portfolio.portfolio_manager import get_holdings_enriched
+    holdings = await asyncio.to_thread(get_holdings_enriched, account_id or None)
+    return [h.to_dict() for h in holdings]
+
+
+@app.get("/api/portfolio/summary")
+async def portfolio_summary(account_id: str = ""):
+    """Get aggregated portfolio summary with live prices."""
+    from tools.portfolio.portfolio_manager import get_portfolio_summary
+    summary = await asyncio.to_thread(get_portfolio_summary, account_id or None)
+    return summary.to_dict()
+
+
+@app.post("/api/portfolio/import")
+async def portfolio_import(file: UploadFile = File(...), account_id: str = "",
+                           broker_hint: str = "", password: str = ""):
+    """Import holdings from CSV, Excel, or CAS PDF file."""
+    from tools.portfolio.portfolio_manager import import_file as portfolio_import_file
+
+    ALLOWED_EXT = {".csv", ".xlsx", ".xls", ".pdf"}
+    filename = file.filename or "unknown"
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_EXT:
+        return JSONResponse(
+            {"error": f"Unsupported file type: {ext}. Allowed: {', '.join(sorted(ALLOWED_EXT))}"},
+            status_code=400,
+        )
+
+    content_bytes = await file.read()
+    if len(content_bytes) > 50 * 1024 * 1024:
+        return JSONResponse({"error": "File too large. Max 50MB."}, status_code=400)
+
+    safe_name = f"{uuid.uuid4().hex[:8]}_{filename}"
+    filepath = os.path.join(UPLOAD_DIR, safe_name)
+    try:
+        with open(filepath, "wb") as f:
+            f.write(content_bytes)
+        result = await asyncio.to_thread(
+            portfolio_import_file, filepath, account_id, broker_hint, password
+        )
+        if result.get("errors") and not result.get("holdings") and not result.get("mf_holdings"):
+            return JSONResponse(result, status_code=400)
+        return result
+    finally:
+        try:
+            os.remove(filepath)
+        except OSError:
+            pass
+
+
 @app.get("/api/health")
 async def health():
     from llm.engine import llm, _response_cache

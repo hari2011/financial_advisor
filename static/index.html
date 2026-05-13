@@ -2059,6 +2059,8 @@
             margin-top: 2px;
         }
         .calc-result-section:first-child { margin-top: 0; }
+        .pf-tab { border-radius: 6px; transition: all 0.2s; }
+        .pf-tab.active { background: var(--accent); color: #fff; font-weight: 600; }
         .calc-compare-table {
             width: 100%;
             border-collapse: collapse;
@@ -2149,6 +2151,16 @@
                 </span>
                 <span class="calc-count-badge" id="sidebarCalcCount"></span>
             </button>
+            <button class="btn-calc-highlight" onclick="openPortfolio()" style="background:linear-gradient(135deg, rgba(99,102,241,0.15), rgba(168,85,247,0.15)); border-color:rgba(99,102,241,0.3);">
+                <span class="calc-btn-icon" style="background:linear-gradient(135deg,#6366f1,#a855f7); color:#fff;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 010-4h14v4"/><path d="M3 5v14a2 2 0 002 2h16v-5"/><path d="M18 12a2 2 0 000 4h4v-4h-4z"/></svg>
+                </span>
+                <span class="calc-btn-text">
+                    <span class="calc-btn-title">Portfolio Tracker</span>
+                    <span class="calc-btn-sub">DMAT · Holdings · P&amp;L · All Brokers</span>
+                </span>
+                <span class="calc-count-badge" id="sidebarPortfolioCount"></span>
+            </button>
             <button class="btn-clear" onclick="exportChat()" style="display:flex; align-items:center; justify-content:center; gap:4px;">📥 Export Chat</button>
             <div class="toggle-row">
                 <span style="display:flex;align-items:center;gap:0;">💾 Save conversations
@@ -2197,6 +2209,77 @@
             </div>
             <div class="calc-body" id="calcBody">
                 <div class="calc-grid" id="calcGrid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Portfolio Panel -->
+    <div class="calc-overlay" id="portfolioOverlay" onclick="if(event.target===this)closePortfolio()">
+        <div class="calc-panel" style="max-width:960px;">
+            <div class="calc-header" style="background:linear-gradient(135deg, rgba(99,102,241,0.15), rgba(168,85,247,0.15));">
+                <h2 id="portfolioTitle">💼 Portfolio Tracker</h2>
+                <button class="calc-close" onclick="closePortfolio()" title="Close (Esc)">✕</button>
+            </div>
+            <div class="calc-body" id="portfolioBody" style="padding:16px;">
+                <!-- Summary Cards -->
+                <div id="portfolioSummaryCards" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; margin-bottom:16px;"></div>
+
+                <!-- Tab bar -->
+                <div style="display:flex; gap:4px; margin-bottom:12px; border-bottom:1px solid var(--border); padding-bottom:8px;">
+                    <button class="btn-clear pf-tab active" onclick="switchPortfolioTab('holdings',this)" style="font-size:13px; padding:6px 14px;">📊 Holdings</button>
+                    <button class="btn-clear pf-tab" onclick="switchPortfolioTab('mf',this)" style="font-size:13px; padding:6px 14px;">📈 Mutual Funds</button>
+                    <button class="btn-clear pf-tab" onclick="switchPortfolioTab('accounts',this)" style="font-size:13px; padding:6px 14px;">🔗 Accounts</button>
+                    <button class="btn-clear pf-tab" onclick="switchPortfolioTab('import',this)" style="font-size:13px; padding:6px 14px;">📥 Import</button>
+                </div>
+
+                <!-- Tab content -->
+                <div id="pfTabHoldings">
+                    <div id="holdingsTable" style="color:var(--text-secondary); text-align:center; padding:30px;">No holdings yet. Link a broker account or import a file.</div>
+                </div>
+                <div id="pfTabMf" style="display:none;">
+                    <div id="mfTable" style="color:var(--text-secondary); text-align:center; padding:30px;">No mutual fund holdings yet.</div>
+                </div>
+                <div id="pfTabAccounts" style="display:none;">
+                    <div id="accountsList" style="color:var(--text-secondary); text-align:center; padding:30px;">No linked accounts.</div>
+                    <div style="margin-top:12px; text-align:center;">
+                        <button class="btn-clear" onclick="showAddAccountForm()" style="background:var(--accent); color:#fff; padding:8px 20px; border-radius:8px; font-weight:600;">+ Link Broker Account</button>
+                    </div>
+                    <div id="addAccountForm" style="display:none; margin-top:16px; padding:16px; background:var(--bg-secondary); border-radius:10px; border:1px solid var(--border);">
+                        <h4 style="margin:0 0 12px;">Link New Account</h4>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                            <div>
+                                <label style="font-size:12px; color:var(--text-secondary);">Broker</label>
+                                <select id="addBrokerSelect" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--bg-primary); color:var(--text-primary); font-size:13px;"></select>
+                            </div>
+                            <div>
+                                <label style="font-size:12px; color:var(--text-secondary);">Client ID</label>
+                                <input id="addClientId" type="text" placeholder="Your client/demat ID" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--bg-primary); color:var(--text-primary); font-size:13px; box-sizing:border-box;">
+                            </div>
+                            <div>
+                                <label style="font-size:12px; color:var(--text-secondary);">Display Name</label>
+                                <input id="addDisplayName" type="text" placeholder="e.g. My Zerodha" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--bg-primary); color:var(--text-primary); font-size:13px; box-sizing:border-box;">
+                            </div>
+                            <div>
+                                <label style="font-size:12px; color:var(--text-secondary);">Access Token <span style="color:var(--text-muted);">(optional)</span></label>
+                                <input id="addAccessToken" type="password" placeholder="API access token" style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--bg-primary); color:var(--text-primary); font-size:13px; box-sizing:border-box;">
+                            </div>
+                        </div>
+                        <div style="margin-top:12px; display:flex; gap:8px; justify-content:flex-end;">
+                            <button class="btn-clear" onclick="document.getElementById('addAccountForm').style.display='none'">Cancel</button>
+                            <button class="btn-clear" onclick="addBrokerAccount()" style="background:var(--green); color:#fff; font-weight:600;">Add Account</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="pfTabImport" style="display:none;">
+                    <div style="padding:20px; text-align:center; border:2px dashed var(--border); border-radius:12px; margin:10px 0;">
+                        <div style="font-size:32px; margin-bottom:8px;">📂</div>
+                        <p style="color:var(--text-secondary); margin:0 0 12px;">Drop a CSV, Excel, or CAS PDF file here</p>
+                        <input type="file" id="portfolioFileInput" accept=".csv,.xlsx,.xls,.pdf" style="display:none;" onchange="importPortfolioFile(this)">
+                        <button class="btn-clear" onclick="document.getElementById('portfolioFileInput').click()" style="background:var(--accent); color:#fff; padding:8px 20px; border-radius:8px; font-weight:600;">Choose File</button>
+                        <p style="font-size:11px; color:var(--text-muted); margin-top:10px;">Supports: Zerodha Console, Groww, Angel One, ICICI Direct, 5Paisa, HDFC Securities, CAS PDF (CDSL/NSDL)</p>
+                    </div>
+                    <div id="importResult" style="display:none; margin-top:12px; padding:12px; border-radius:8px;"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -4117,6 +4200,230 @@
         if (sessionId) {
             restoreSession(sessionId).catch(() => {});
         }
+
+        // ──── Portfolio functions ────
+        let _pfLoaded = false;
+
+        window.openPortfolio = async function() {
+            document.getElementById('portfolioOverlay').classList.add('active');
+            if (!_pfLoaded) {
+                _pfLoaded = true;
+                await refreshPortfolio();
+                loadBrokerOptions();
+            }
+        };
+        window.closePortfolio = function() {
+            document.getElementById('portfolioOverlay').classList.remove('active');
+        };
+
+        window.switchPortfolioTab = function(tab, btn) {
+            ['Holdings','Mf','Accounts','Import'].forEach(t => {
+                document.getElementById('pfTab'+t).style.display = 'none';
+            });
+            document.getElementById('pfTab'+tab.charAt(0).toUpperCase()+tab.slice(1)).style.display = '';
+            document.querySelectorAll('.pf-tab').forEach(b => b.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+        };
+
+        async function refreshPortfolio() {
+            try {
+                const [sumRes, holdRes, mfRes, acctRes] = await Promise.all([
+                    fetch('/api/portfolio/summary').then(r=>r.json()),
+                    fetch('/api/portfolio/holdings').then(r=>r.json()),
+                    fetch('/api/portfolio/holdings?account_id=').then(r=>r.json()),
+                    fetch('/api/portfolio/accounts').then(r=>r.json()),
+                ]);
+                renderSummaryCards(sumRes);
+                renderHoldingsTable(holdRes);
+                renderMfTable(sumRes.mf_holdings||[]);
+                renderAccountsList(acctRes);
+                const badge = document.getElementById('sidebarPortfolioCount');
+                if (badge && sumRes.num_stocks) badge.textContent = sumRes.num_stocks;
+            } catch(e) {
+                console.error('Portfolio load error:', e);
+            }
+        }
+
+        function fmtCurrency(v) {
+            if (v == null) return '₹0';
+            return '₹' + Number(v).toLocaleString('en-IN', {maximumFractionDigits:2});
+        }
+        function fmtPct(v) { return (v>=0?'+':'') + Number(v).toFixed(2) + '%'; }
+        function pnlColor(v) { return v >= 0 ? 'var(--green)' : 'var(--red)'; }
+
+        function renderSummaryCards(s) {
+            const el = document.getElementById('portfolioSummaryCards');
+            if (!s || (!s.num_stocks && !s.num_mf)) {
+                el.innerHTML = '';
+                return;
+            }
+            el.innerHTML = `
+                <div class="market-card"><div><div style="font-size:11px;color:var(--text-muted)">Invested</div><div style="font-size:16px;font-weight:700">${fmtCurrency(s.total_invested)}</div></div></div>
+                <div class="market-card"><div><div style="font-size:11px;color:var(--text-muted)">Current Value</div><div style="font-size:16px;font-weight:700">${fmtCurrency(s.total_current)}</div></div></div>
+                <div class="market-card"><div><div style="font-size:11px;color:var(--text-muted)">Total P&L</div><div style="font-size:16px;font-weight:700;color:${pnlColor(s.total_pnl)}">${fmtCurrency(s.total_pnl)} (${fmtPct(s.total_pnl_pct)})</div></div></div>
+                <div class="market-card"><div><div style="font-size:11px;color:var(--text-muted)">Day P&L</div><div style="font-size:16px;font-weight:700;color:${pnlColor(s.day_pnl)}">${fmtCurrency(s.day_pnl)}</div></div></div>
+                <div class="market-card"><div><div style="font-size:11px;color:var(--text-muted)">Stocks</div><div style="font-size:16px;font-weight:700">${s.num_stocks}</div></div></div>
+                <div class="market-card"><div><div style="font-size:11px;color:var(--text-muted)">Accounts</div><div style="font-size:16px;font-weight:700">${s.num_accounts}</div></div></div>
+            `;
+        }
+
+        function renderHoldingsTable(holdings) {
+            const el = document.getElementById('holdingsTable');
+            if (!holdings || !holdings.length) {
+                el.innerHTML = '<div style="color:var(--text-secondary);text-align:center;padding:30px;">No holdings yet. Link a broker account or import a file.</div>';
+                return;
+            }
+            let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+            html += '<thead><tr style="border-bottom:2px solid var(--border);text-align:left;">';
+            html += '<th style="padding:8px 6px;">Symbol</th><th>Qty</th><th>Avg Price</th><th>LTP</th><th>P&L</th><th>Value</th><th>Broker</th>';
+            html += '</tr></thead><tbody>';
+            holdings.forEach(h => {
+                html += `<tr style="border-bottom:1px solid var(--border);">
+                    <td style="padding:6px;font-weight:600;">${h.symbol}<div style="font-size:10px;color:var(--text-muted);">${h.name||''}</div></td>
+                    <td>${h.quantity}</td>
+                    <td>${fmtCurrency(h.avg_price)}</td>
+                    <td>${fmtCurrency(h.current_price)}</td>
+                    <td style="color:${pnlColor(h.pnl)}">${fmtCurrency(h.pnl)}<br><span style="font-size:10px">${fmtPct(h.pnl_pct)}</span></td>
+                    <td>${fmtCurrency(h.current_value)}</td>
+                    <td style="font-size:11px;color:var(--text-muted);">${h.broker||''}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            el.innerHTML = html;
+        }
+
+        function renderMfTable(mfs) {
+            const el = document.getElementById('mfTable');
+            if (!mfs || !mfs.length) {
+                el.innerHTML = '<div style="color:var(--text-secondary);text-align:center;padding:30px;">No mutual fund holdings yet.</div>';
+                return;
+            }
+            let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+            html += '<thead><tr style="border-bottom:2px solid var(--border);text-align:left;">';
+            html += '<th style="padding:8px 6px;">Scheme</th><th>Folio</th><th>Units</th><th>NAV</th><th>Invested</th><th>Current</th><th>P&L</th>';
+            html += '</tr></thead><tbody>';
+            mfs.forEach(m => {
+                const pnl = (m.current_value||0) - (m.invested_value||0);
+                html += `<tr style="border-bottom:1px solid var(--border);">
+                    <td style="padding:6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;">${m.scheme_name||''}</td>
+                    <td style="font-size:11px;">${m.folio||''}</td>
+                    <td>${Number(m.units||0).toFixed(3)}</td>
+                    <td>${fmtCurrency(m.current_nav)}</td>
+                    <td>${fmtCurrency(m.invested_value)}</td>
+                    <td>${fmtCurrency(m.current_value)}</td>
+                    <td style="color:${pnlColor(pnl)}">${fmtCurrency(pnl)}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            el.innerHTML = html;
+        }
+
+        function renderAccountsList(accounts) {
+            const el = document.getElementById('accountsList');
+            if (!accounts || !accounts.length) {
+                el.innerHTML = '<div style="color:var(--text-secondary);text-align:center;padding:30px;">No linked accounts.</div>';
+                return;
+            }
+            let html = '';
+            accounts.forEach(a => {
+                html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;background:var(--bg-primary);">
+                    <div>
+                        <div style="font-weight:600;font-size:14px;">${a.display_name||a.broker}</div>
+                        <div style="font-size:11px;color:var(--text-muted);">${a.broker} · ${a.client_id||'no ID'} · Last sync: ${a.last_synced?new Date(a.last_synced).toLocaleDateString():'never'}</div>
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                        <button class="btn-clear" onclick="syncAccount('${a.id}')" style="font-size:12px;padding:4px 10px;">🔄 Sync</button>
+                        <button class="btn-clear" onclick="removeAccount('${a.id}')" style="font-size:12px;padding:4px 10px;color:var(--red);">✕</button>
+                    </div>
+                </div>`;
+            });
+            el.innerHTML = html;
+        }
+
+        async function loadBrokerOptions() {
+            try {
+                const brokers = await fetch('/api/portfolio/brokers').then(r=>r.json());
+                const sel = document.getElementById('addBrokerSelect');
+                sel.innerHTML = brokers.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+            } catch(e) {}
+        }
+
+        window.showAddAccountForm = function() {
+            document.getElementById('addAccountForm').style.display = '';
+        };
+
+        window.addBrokerAccount = async function() {
+            const broker = document.getElementById('addBrokerSelect').value;
+            const clientId = document.getElementById('addClientId').value.trim();
+            const displayName = document.getElementById('addDisplayName').value.trim();
+            const accessToken = document.getElementById('addAccessToken').value.trim();
+            try {
+                const res = await fetch('/api/portfolio/accounts', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({broker, client_id: clientId, display_name: displayName, access_token: accessToken}),
+                });
+                if (res.ok) {
+                    document.getElementById('addAccountForm').style.display = 'none';
+                    document.getElementById('addClientId').value = '';
+                    document.getElementById('addDisplayName').value = '';
+                    document.getElementById('addAccessToken').value = '';
+                    await refreshPortfolio();
+                    switchPortfolioTab('accounts', document.querySelectorAll('.pf-tab')[2]);
+                }
+            } catch(e) { console.error(e); }
+        };
+
+        window.syncAccount = async function(id) {
+            try {
+                await fetch('/api/portfolio/sync/'+id, {method:'POST'});
+                await refreshPortfolio();
+            } catch(e) { console.error(e); }
+        };
+
+        window.removeAccount = async function(id) {
+            if (!confirm('Remove this account and all its holdings?')) return;
+            try {
+                await fetch('/api/portfolio/accounts/'+id, {method:'DELETE'});
+                await refreshPortfolio();
+            } catch(e) { console.error(e); }
+        };
+
+        window.importPortfolioFile = async function(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const fd = new FormData();
+            fd.append('file', file);
+            const resultEl = document.getElementById('importResult');
+            resultEl.style.display = '';
+            resultEl.style.background = 'var(--bg-secondary)';
+            resultEl.style.border = '1px solid var(--border)';
+            resultEl.innerHTML = '<div style="color:var(--text-muted);">Importing...</div>';
+            try {
+                const res = await fetch('/api/portfolio/import', {method:'POST', body:fd});
+                const data = await res.json();
+                if (data.errors && data.errors.length && !data.holdings && !data.mf_holdings) {
+                    resultEl.style.borderColor = 'var(--red)';
+                    resultEl.innerHTML = `<div style="color:var(--red);">❌ ${data.errors.join('<br>')}</div>`;
+                } else {
+                    resultEl.style.borderColor = 'var(--green)';
+                    resultEl.innerHTML = `<div style="color:var(--green);">✅ Imported ${data.holdings||0} stocks, ${data.mf_holdings||0} mutual funds</div>`;
+                    await refreshPortfolio();
+                }
+            } catch(e) {
+                resultEl.style.borderColor = 'var(--red)';
+                resultEl.innerHTML = '<div style="color:var(--red);">❌ Import failed</div>';
+            }
+            input.value = '';
+        };
+
+        // Add ESC handler for portfolio
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && document.getElementById('portfolioOverlay').classList.contains('active')) {
+                closePortfolio();
+            }
+        });
+
         userInput.focus();
     </script>
 </body>
